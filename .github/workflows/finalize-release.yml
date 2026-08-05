@@ -258,7 +258,7 @@ jobs:
           gh release edit "$RELEASE_TAG" --draft=false
           if test "$changed" = 0; then
             echo "Release and catalog entry already finalized"
-            gh release delete "$STAGING_TAG" --cleanup-tag --yes
+            gh release delete "$STAGING_TAG" --yes || true
             exit 0
           fi
 
@@ -305,4 +305,4 @@ jobs:
           git diff --cached --check
           git commit -m "release: publish $RELEASE_TAG"
           git push origin HEAD:main
-          gh release delete "$STAGING_TAG" --cleanup-tag --yes
+          gh release delete "$STAGING_TAG" --yes || true
