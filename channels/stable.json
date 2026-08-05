@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "sequence": 3,
+  "sequence": 4,
   "channel": "stable",
-  "published_at": "2026-08-05T03:40:11Z",
+  "published_at": "2026-08-05T03:45:32Z",
   "runtime": {
     "latest": "v0_4_0_r2",
     "releases": {
@@ -10,7 +10,7 @@
         "version": "0.4.0",
         "revision": 2,
         "display_version": "0.4.0-r2",
-        "commit": "3776a86348810bb89bef7bbf56e14df9881db7c9",
+        "commit": "1cc4b94ed7222791c6b3c17878c202053d209c3c",
         "targets": {
           "openwrt_25_12_4_x86_64": {
             "openwrt_release": "25.12.4",
