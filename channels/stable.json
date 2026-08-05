@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "sequence": 4,
+  "sequence": 5,
   "channel": "stable",
-  "published_at": "2026-08-05T03:45:32Z",
+  "published_at": "2026-08-05T04:31:09Z",
   "runtime": {
     "latest": "v0_4_0_r2",
     "releases": {
@@ -10,7 +10,7 @@
         "version": "0.4.0",
         "revision": 2,
         "display_version": "0.4.0-r2",
-        "commit": "1cc4b94ed7222791c6b3c17878c202053d209c3c",
+        "commit": "34ea369f31963575d22d19a0a68dca15a3f833d6",
         "targets": {
           "openwrt_25_12_4_x86_64": {
             "openwrt_release": "25.12.4",
@@ -24,11 +24,38 @@
             },
             "luci_app_candy": {
               "url": "https://github.com/reTsubasa/candy-release/releases/download/runtime-v0.4.0-r2/luci-app-candy-0.4.0-r2.apk",
-              "sha256": "13570414e09c58266c087b12be4338d744c0c89319ba501c5c6cafc246f5dd22",
-              "size": 44259
+              "sha256": "5f7994a54621414207227a520d39db59fb9fe784154e1a446e75c8519e3fad28",
+              "size": 44530
             }
           }
-        }
+        },
+        "release_assets": [
+          {
+            "name": "BUILD-INFO",
+            "sha256": "924e13d3d57c3fd03991aedbf564cfa39b2b79ac029ac3a2f2c55997978364c3",
+            "size": 349
+          },
+          {
+            "name": "SHA256SUMS",
+            "sha256": "3d3f985610e643d34e12dc66f2f4f71f3cbec0af3a934ff4f1b63ad2a4fede3e",
+            "size": 359
+          },
+          {
+            "name": "candy-client-0.4.0-r2.apk",
+            "sha256": "560b572dbb40d21689f7430194e0e71af359d0717454a46d9d10305e036c831e",
+            "size": 1138832
+          },
+          {
+            "name": "luci-app-candy-0.4.0-r2.apk",
+            "sha256": "5f7994a54621414207227a520d39db59fb9fe784154e1a446e75c8519e3fad28",
+            "size": 44530
+          },
+          {
+            "name": "runtime-release-metadata.json",
+            "sha256": "edf6327b63085607f6df89a23a963734e04d91fbebf6e979ba4232ebf015eb4c",
+            "size": 903
+          }
+        ]
       }
     }
   },
