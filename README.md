@@ -67,7 +67,9 @@ replaces its assets, updates the catalog hashes, increments `sequence`, and
 signs the new catalog. A changed Runtime package should normally increment the
 package revision, and a changed Core binary should normally increment the Core
 version, so latest replacement remains an explicit recovery path rather than
-the routine release process.
+the routine release process. Immutability covers every allowlisted Release
+asset, including metadata, manifests and checksum files, not only the Runtime
+APKs or Core bundle.
 
 ## Version and target model
 
@@ -116,9 +118,14 @@ on the Core page.
 4. The central Action downloads the draft, verifies the complete asset set,
    metadata, sizes and SHA-256 values. Core also requires its independent
    manifest signature.
-5. The Action creates or updates the final Release, adds the exact target to
-   `channels/stable.json`, updates `latest`, increments `sequence`, signs the
-   catalog and commits the catalog, signature and generated README status.
+5. The Action compares the complete incoming asset manifest with both the
+   signed catalog entry and the existing formal Release. An identical replay
+   exits before touching the formal Release.
+6. For an accepted latest replacement, the Action prepares the signed catalog
+   and local Git commit, backs up the formal assets, replaces and remotely
+   verifies the exact asset set, then pushes the catalog commit. A failed
+   upload, verification or Git push restores the previous formal assets.
+7. After the signed catalog is committed, the incoming draft is deleted.
 
 A different hash for an existing non-latest version is rejected before the
 final Release is touched. A different hash for the current latest version is

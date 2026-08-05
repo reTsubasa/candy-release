@@ -39,6 +39,9 @@ jobs:
           ref: main
           fetch-depth: 0
 
+      - name: Test catalog replacement policy
+        run: .github/scripts/catalog-policy-test.sh
+
       - name: Build pinned catalog verifier
         shell: bash
         run: |
@@ -61,7 +64,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          fail() { echo "finalize-release: $*" >&2; exit 1; }
+          fail() { echo "finalize-release: $*" >&2; return 1; }
           file_sha() { sha256sum "$1" | awk '{ print tolower($1) }'; }
           file_size() { wc -c < "$1" | tr -d ' '; }
           require_file() {
@@ -189,10 +192,24 @@ jobs:
             comparison_version=$version
           fi
 
+          : > release-assets.ndjson
+          while IFS= read -r -d '' asset; do
+            jq -n \
+              --arg name "${asset##*/}" \
+              --arg sha256 "$(file_sha "$asset")" \
+              --argjson size "$(file_size "$asset")" \
+              '{name:$name,sha256:$sha256,size:$size}' >> release-assets.ndjson
+          done < <(find incoming -maxdepth 1 -type f -print0 | sort -z)
+          jq -s . release-assets.ndjson > release-assets.json
+          jq --slurpfile assets release-assets.json '. + {release_assets:$assets[0]}' \
+            entry.json > entry.json.next
+          mv entry.json.next entry.json
           jq -e . entry.json >/dev/null
-          echo "key=$key" >> "$GITHUB_OUTPUT"
-          echo "version=$comparison_version" >> "$GITHUB_OUTPUT"
-          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
+          {
+            echo "key=$key"
+            echo "version=$comparison_version"
+            echo "tag=$release_tag"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Publish assets and signed stable catalog
         shell: bash
@@ -202,8 +219,24 @@ jobs:
           RELEASE_VERSION: ${{ steps.artifact.outputs.version }}
           RELEASE_TAG: ${{ steps.artifact.outputs.tag }}
         run: |
-          set -euo pipefail
-          fail() { echo "finalize-release: $*" >&2; exit 1; }
+          set -Eeuo pipefail
+          fail() { echo "finalize-release: $*" >&2; return 1; }
+          file_sha() { sha256sum "$1" | awk '{ print tolower($1) }'; }
+          file_size() { wc -c < "$1" | tr -d ' '; }
+          asset_manifest() {
+            local directory=$1 output=$2 asset temporary
+            temporary="$output.ndjson"
+            : > "$temporary"
+            while IFS= read -r -d '' asset; do
+              jq -n \
+                --arg name "${asset##*/}" \
+                --arg sha256 "$(file_sha "$asset")" \
+                --argjson size "$(file_size "$asset")" \
+                '{name:$name,sha256:$sha256,size:$size}' >> "$temporary"
+            done < <(find "$directory" -maxdepth 1 -type f -print0 | sort -z)
+            jq -s . "$temporary" > "$output"
+            rm -f "$temporary"
+          }
           test -n "$CATALOG_SIGNING_KEY" || fail "CANDY_CATALOG_SIGNING_KEY is not configured"
           git pull --ff-only origin main
           mkdir -p channels
@@ -213,22 +246,50 @@ jobs:
             jq -n '{schema_version:1,sequence:0,channel:"stable",published_at:null,runtime:{latest:null,releases:{}},core:{latest:null,releases:{}}}' > channels/stable.json
           fi
 
-          current=$(jq -cS --arg kind "$RELEASE_KIND" --arg key "$RELEASE_KEY" '.[$kind].releases[$key] // null' channels/stable.json)
-          desired=$(jq -cS . entry.json)
+          decision=$(.github/scripts/catalog-policy.sh \
+            channels/stable.json entry.json "$RELEASE_KIND" "$RELEASE_KEY" "$RELEASE_VERSION")
+          case "$decision" in
+            new|replace-latest) changed=1 ;;
+            unchanged) changed=0 ;;
+            *) fail "unexpected catalog policy decision: $decision" ;;
+          esac
+
           latest_key=$(jq -r --arg kind "$RELEASE_KIND" '.[$kind].latest // empty' channels/stable.json)
-          changed=0
-          if test "$current" = null; then
-            if test -n "$latest_key"; then
-              if test "$RELEASE_KIND" = runtime; then
-                latest_version=$(jq -r --arg key "$latest_key" '.runtime.releases[$key].display_version' channels/stable.json)
-              else
-                latest_version=$(jq -r --arg key "$latest_key" '.core.releases[$key].version' channels/stable.json)
-              fi
-              dpkg --compare-versions "$RELEASE_VERSION" gt "$latest_version" || fail "release would move stable backward"
+          is_latest=0
+          test "$latest_key" = "$RELEASE_KEY" && is_latest=1
+          formal_existed=0
+          formal_was_draft=false
+          formal_matches=0
+          mkdir -m 0700 published
+          if release_json=$(gh release view "$RELEASE_TAG" --json isDraft,assets 2>/dev/null); then
+            formal_existed=1
+            formal_was_draft=$(jq -r .isDraft <<<"$release_json")
+            if test "$(jq '.assets | length' <<<"$release_json")" -gt 0; then
+              gh release download "$RELEASE_TAG" --dir published
             fi
-            changed=1
-          elif test "$current" != "$desired"; then
-            test "$latest_key" = "$RELEASE_KEY" || fail "non-latest catalog entry $RELEASE_KIND/$RELEASE_KEY is immutable"
+            asset_manifest published published-assets.json
+            cmp -s published-assets.json release-assets.json && formal_matches=1
+          fi
+
+          if test "$formal_existed" = 1 && test "$formal_matches" = 0; then
+            case "$decision:$is_latest" in
+              replace-latest:1|unchanged:1) ;;
+              *) fail "formal $RELEASE_TAG assets differ from an immutable or untracked release" ;;
+            esac
+          fi
+
+          release_write=0
+          if test "$formal_existed" = 0 || test "$formal_matches" = 0 || test "$formal_was_draft" = true; then
+            release_write=1
+          fi
+
+          if test "$decision" = unchanged && test "$release_write" = 0; then
+            echo "Release and catalog entry already finalized"
+            gh release delete "$STAGING_TAG" --yes || true
+            exit 0
+          fi
+
+          if test "$decision" = unchanged && test "$is_latest" = 1 && test "$release_write" = 1; then
             changed=1
           fi
 
@@ -241,38 +302,18 @@ jobs:
               .[$kind].latest = $key
             ' channels/stable.json > channels/stable.json.next
             mv channels/stable.json.next channels/stable.json
-          fi
 
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" incoming/* --clobber
-          else
-            if test "$RELEASE_KIND" = runtime; then
-              title="Candy Runtime $RELEASE_VERSION"
-            else
-              title="Candy Core $RELEASE_VERSION"
-            fi
-            gh release create "$RELEASE_TAG" --draft --title "$title" \
-              --notes "Validated by the centralized Candy release workflow."
-            gh release upload "$RELEASE_TAG" incoming/*
-          fi
-          gh release edit "$RELEASE_TAG" --draft=false
-          if test "$changed" = 0; then
-            echo "Release and catalog entry already finalized"
-            gh release delete "$STAGING_TAG" --yes || true
-            exit 0
-          fi
+            key_file=$(mktemp)
+            chmod 0600 "$key_file"
+            printf '%s\n' "$CATALOG_SIGNING_KEY" > "$key_file"
+            usign -S -s "$key_file" -m channels/stable.json -x channels/stable.json.sig
+            usign -V -p keys/catalog-release.pub -m channels/stable.json -x channels/stable.json.sig
 
-          key_file=$(mktemp)
-          chmod 0600 "$key_file"
-          printf '%s\n' "$CATALOG_SIGNING_KEY" > "$key_file"
-          usign -S -s "$key_file" -m channels/stable.json -x channels/stable.json.sig
-          usign -V -p keys/catalog-release.pub -m channels/stable.json -x channels/stable.json.sig
-
-          runtime_display=$(jq -r '.runtime.latest as $key | if $key then .runtime.releases[$key].display_version else "not published" end' channels/stable.json)
-          core_display=$(jq -r '.core.latest as $key | if $key then .core.releases[$key].version else "not published" end' channels/stable.json)
-          sequence=$(jq -r .sequence channels/stable.json)
-          published_at=$(jq -r .published_at channels/stable.json)
-          python3 - "$runtime_display" "$core_display" "$sequence" "$published_at" <<'PY'
+            runtime_display=$(jq -r '.runtime.latest as $key | if $key then .runtime.releases[$key].display_version else "not published" end' channels/stable.json)
+            core_display=$(jq -r '.core.latest as $key | if $key then .core.releases[$key].version else "not published" end' channels/stable.json)
+            sequence=$(jq -r .sequence channels/stable.json)
+            published_at=$(jq -r .published_at channels/stable.json)
+            python3 - "$runtime_display" "$core_display" "$sequence" "$published_at" <<'PY'
           import pathlib
           import sys
 
@@ -299,10 +340,64 @@ jobs:
           path.write_text(before + block + after)
           PY
 
-          git config user.name candy-release-bot
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add channels/stable.json channels/stable.json.sig README.md
-          git diff --cached --check
-          git commit -m "release: publish $RELEASE_TAG"
-          git push origin HEAD:main
+            git config user.name candy-release-bot
+            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+            git add channels/stable.json channels/stable.json.sig README.md
+            git diff --cached --check
+            git commit -m "release: publish $RELEASE_TAG"
+          fi
+
+          rollback_release() {
+            local status=$1 name
+            trap - ERR INT TERM
+            set +e
+            echo "finalize-release: restoring formal Release after failure" >&2
+            if test "$formal_existed" = 1; then
+              while IFS= read -r name; do
+                test -n "$name" || continue
+                test -f "published/$name" || gh release delete-asset "$RELEASE_TAG" "$name" --yes
+              done < <(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' 2>/dev/null)
+              if find published -maxdepth 1 -type f -print -quit | grep -q .; then
+                gh release upload "$RELEASE_TAG" published/* --clobber
+              fi
+              gh release edit "$RELEASE_TAG" --draft="$formal_was_draft"
+            else
+              gh release delete "$RELEASE_TAG" --yes
+            fi
+            exit "$status"
+          }
+
+          if test "$release_write" = 1; then
+            trap 'rollback_release $?' ERR
+            trap 'rollback_release 130' INT TERM
+            if test "$formal_existed" = 1; then
+              if test "$formal_matches" = 0; then
+                while IFS= read -r name; do
+                  test -n "$name" || continue
+                  test -f "incoming/$name" || gh release delete-asset "$RELEASE_TAG" "$name" --yes
+                done < <(jq -r '.[].name' published-assets.json)
+                gh release upload "$RELEASE_TAG" incoming/* --clobber
+              fi
+            else
+              if test "$RELEASE_KIND" = runtime; then
+                title="Candy Runtime $RELEASE_VERSION"
+              else
+                title="Candy Core $RELEASE_VERSION"
+              fi
+              gh release create "$RELEASE_TAG" --draft --title "$title" \
+                --notes "Validated by the centralized Candy release workflow."
+              gh release upload "$RELEASE_TAG" incoming/*
+            fi
+            mkdir -m 0700 verified
+            gh release download "$RELEASE_TAG" --dir verified
+            asset_manifest verified verified-assets.json
+            cmp verified-assets.json release-assets.json \
+              || fail "formal Release verification differs from validated incoming assets"
+            gh release edit "$RELEASE_TAG" --draft=false
+          fi
+
+          if test "$changed" = 1; then
+            git push origin HEAD:main
+          fi
+          trap - ERR INT TERM
           gh release delete "$STAGING_TAG" --yes || true
