@@ -268,8 +268,8 @@ jobs:
           usign -S -s "$key_file" -m channels/stable.json -x channels/stable.json.sig
           usign -V -p keys/catalog-release.pub -m channels/stable.json -x channels/stable.json.sig
 
-          runtime_display=$(jq -r '.runtime.releases[.runtime.latest].display_version // "not published"' channels/stable.json)
-          core_display=$(jq -r '.core.releases[.core.latest].version // "not published"' channels/stable.json)
+          runtime_display=$(jq -r '.runtime.latest as $key | if $key then .runtime.releases[$key].display_version else "not published" end' channels/stable.json)
+          core_display=$(jq -r '.core.latest as $key | if $key then .core.releases[$key].version else "not published" end' channels/stable.json)
           sequence=$(jq -r .sequence channels/stable.json)
           published_at=$(jq -r .published_at channels/stable.json)
           python3 - "$runtime_display" "$core_display" "$sequence" "$published_at" <<'PY'
