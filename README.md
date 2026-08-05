@@ -24,6 +24,15 @@ https://raw.githubusercontent.com/reTsubasa/candy-release/main/channels/stable.j
 https://raw.githubusercontent.com/reTsubasa/candy-release/main/channels/stable.json.sig
 ```
 
+<!-- stable-status:start -->
+## Current stable channel
+
+- Runtime: `not published`
+- Core: `not published`
+- Catalog sequence: `0`
+- Published at: `not published`
+<!-- stable-status:end -->
+
 ## Release tags and asset names
 
 Runtime and Core versions are independent.
@@ -45,13 +54,20 @@ core-v<core-version>
 
 Runtime releases are produced by `candy-runtime` GitHub Actions. Core releases
 are built, stripped, signed, and uploaded locally from the private
-`candy-core` repository. Uploading an asset never publishes it to clients by
+`candy-core` repository. Both publishers upload only to an
+`incoming-<release-tag>` draft Release and
+then dispatch this repository's `finalize-release` Action. That Action validates
+the complete asset set, publishes the Release, updates this status block and
+signs the stable catalog. Uploading an asset never publishes it to clients by
 itself: clients only discover releases referenced by the signed stable catalog.
 
-Release tags and assets are immutable. A changed Runtime package increments
-the package revision even when the Runtime version is unchanged. A changed
-Core binary increments the Core version; an existing Core tag must never be
-rebuilt in place.
+Published versions which are not the current `latest` are immutable. The
+current `latest` version may be republished in place; the central Action then
+replaces its assets, updates the catalog hashes, increments `sequence`, and
+signs the new catalog. A changed Runtime package should normally increment the
+package revision, and a changed Core binary should normally increment the Core
+version, so latest replacement remains an explicit recovery path rather than
+the routine release process.
 
 ## Version and target model
 
@@ -94,15 +110,22 @@ on the Core page.
 ## Publishing order
 
 1. Build and test in the owning repository.
-2. Publish immutable assets to a matching GitHub Release in this repository.
-3. Verify every asset size and SHA-256 from GitHub, not only from the build
-   workspace.
-4. Add the release and exact targets to `channels/stable.json`, update `latest`,
-   increment `sequence`, and set `published_at`.
-5. Sign the exact catalog bytes with the offline catalog key, verify the
-   signature, then commit and push the catalog and signature together.
+2. Upload the exact allowlisted assets to an `incoming-<release-tag>` draft
+   Release in this repository.
+3. Dispatch `candy-artifact-ready` with only `release_kind` and `staging_tag`.
+4. The central Action downloads the draft, verifies the complete asset set,
+   metadata, sizes and SHA-256 values. Core also requires its independent
+   manifest signature.
+5. The Action creates or updates the final Release, adds the exact target to
+   `channels/stable.json`, updates `latest`, increments `sequence`, signs the
+   catalog and commits the catalog, signature and generated README status.
 
-The Runtime Action and the local Core publisher stop after step 2. They never
-modify the catalog. At least the current and previous published Runtime and
-Core assets should be retained for rollback. Any asset referenced by a signed
-catalog must not be deleted.
+A different hash for an existing non-latest version is rejected before the
+final Release is touched. A different hash for the current latest version is
+accepted and recorded as a new catalog sequence.
+
+The catalog signing key is held only as the protected
+`CANDY_CATALOG_SIGNING_KEY` Actions secret. The Core manifest signing key never
+leaves the local Core build machine. At least the current and previous
+published Runtime and Core assets should be retained for rollback. Any asset
+referenced by a signed catalog must not be deleted.

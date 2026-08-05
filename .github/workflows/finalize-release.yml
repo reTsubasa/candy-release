@@ -1,0 +1,308 @@
+name: finalize-release
+
+on:
+  repository_dispatch:
+    types: [candy-artifact-ready]
+  workflow_dispatch:
+    inputs:
+      release_kind:
+        description: Artifact family to finalize
+        required: true
+        type: choice
+        options:
+          - runtime
+          - core
+      staging_tag:
+        description: Existing incoming draft Release tag
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: candy-release-catalog
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    env:
+      RELEASE_KIND: ${{ github.event_name == 'workflow_dispatch' && inputs.release_kind || github.event.client_payload.release_kind }}
+      STAGING_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.staging_tag || github.event.client_payload.staging_tag }}
+      CATALOG_SIGNING_KEY: ${{ secrets.CANDY_CATALOG_SIGNING_KEY }}
+      USIGN_COMMIT: c4c72b1b07945ee192361dc751291a7c98d6adcd
+    steps:
+      - name: Check out release control repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Build pinned catalog verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y cmake gcc jq
+          git init -q /tmp/usign
+          git -C /tmp/usign remote add origin https://git.openwrt.org/project/usign.git
+          git -C /tmp/usign fetch --depth 1 origin "$USIGN_COMMIT"
+          git -C /tmp/usign checkout -q FETCH_HEAD
+          cmake -S /tmp/usign -B /tmp/usign/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/usign/build --parallel 2
+          sudo install -m 0755 /tmp/usign/build/usign /usr/local/bin/usign
+
+      - name: Download and validate draft assets
+        id: artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          fail() { echo "finalize-release: $*" >&2; exit 1; }
+          file_sha() { sha256sum "$1" | awk '{ print tolower($1) }'; }
+          file_size() { wc -c < "$1" | tr -d ' '; }
+          require_file() {
+            local path=$1 maximum=$2 size
+            test -f "$path" && test ! -L "$path" || fail "missing regular asset: $path"
+            size=$(file_size "$path")
+            test "$size" -gt 0 && test "$size" -le "$maximum" || fail "invalid asset size: $path"
+          }
+          metadata_asset() {
+            local metadata=$1 component=$2 path=$3 expected_sha expected_size
+            expected_sha=$(jq -er --arg component "$component" '.artifacts[] | select(.component == $component) | .sha256' "$metadata")
+            expected_size=$(jq -er --arg component "$component" '.artifacts[] | select(.component == $component) | .size_bytes' "$metadata")
+            test "$(file_sha "$path")" = "$expected_sha" || fail "metadata SHA mismatch: $path"
+            test "$(file_size "$path")" = "$expected_size" || fail "metadata size mismatch: $path"
+          }
+          build_value() { sed -n "s/^$1=//p" incoming/BUILD-INFO | tail -1; }
+
+          case "$RELEASE_KIND:$STAGING_TAG" in
+            runtime:incoming-runtime-v[0-9]*|core:incoming-core-v[0-9]*) ;;
+            *) fail "invalid release kind or tag" ;;
+          esac
+          printf '%s' "$STAGING_TAG" | grep -Eq '^incoming-(runtime-v[0-9]+\.[0-9]+\.[0-9]+-r[1-9][0-9]*|core-v[0-9]+\.[0-9]+\.[0-9]+)$' || fail "invalid staging tag"
+          release_json=$(gh release view "$STAGING_TAG" --json tagName,isDraft)
+          test "$(jq -r .tagName <<<"$release_json")" = "$STAGING_TAG" || fail "staging Release tag mismatch"
+          test "$(jq -r .isDraft <<<"$release_json")" = true || fail "incoming Release must remain a draft"
+          mkdir -m 0700 incoming
+          gh release download "$STAGING_TAG" --dir incoming
+
+          if test "$RELEASE_KIND" = runtime; then
+            metadata=incoming/runtime-release-metadata.json
+            require_file "$metadata" 1048576
+            version=$(jq -er '.runtime.version' "$metadata")
+            revision=$(jq -er '.runtime.revision' "$metadata")
+            display="$version-r$revision"
+            release_tag="runtime-v$display"
+            test "$STAGING_TAG" = "incoming-$release_tag" || fail "Runtime staging tag mismatch"
+            jq -e --arg tag "$release_tag" '
+              .schema_version == 1 and
+              .release_kind == "candy-runtime-openwrt-client" and
+              .release_tag == $tag and
+              .source.repository == "reTsubasa/candy-runtime" and
+              (.source.commit | test("^[0-9a-f]{40}$")) and
+              .target.platform == "openwrt" and .target.role == "client" and
+              .target.openwrt_release == "25.12.4" and
+              .target.profile == "x86_64" and .target.architecture == "x86_64" and
+              .target.package_format == "apk" and (.artifacts | length) == 2
+            ' "$metadata" >/dev/null || fail "invalid Runtime release metadata"
+            client="candy-client-$display.apk"
+            luci="luci-app-candy-$display.apk"
+            expected=$(printf '%s\n' BUILD-INFO SHA256SUMS "$client" "$luci" runtime-release-metadata.json | sort)
+            actual=$(find incoming -maxdepth 1 -type f -printf '%f\n' | sort)
+            test "$actual" = "$expected" || fail "unexpected Runtime release asset set"
+            require_file "incoming/$client" 16777216
+            require_file "incoming/$luci" 16777216
+            require_file incoming/BUILD-INFO 65536
+            require_file incoming/SHA256SUMS 65536
+            metadata_asset "$metadata" runtime-client "incoming/$client"
+            metadata_asset "$metadata" luci "incoming/$luci"
+            test "$(build_value runtime_version)" = "$version" || fail "BUILD-INFO Runtime version mismatch"
+            test "$(build_value runtime_revision)" = "$revision" || fail "BUILD-INFO Runtime revision mismatch"
+            test "$(build_value openwrt_release)" = 25.12.4 || fail "BUILD-INFO OpenWrt release mismatch"
+            test "$(build_value profile)" = x86_64 || fail "BUILD-INFO profile mismatch"
+            test "$(wc -l < incoming/SHA256SUMS | tr -d ' ')" = 4 || fail "unexpected Runtime checksum count"
+            (cd incoming && sha256sum -c SHA256SUMS)
+            key="v$(tr '.+-' '___' <<<"$version" | tr -d '\n')_r$revision"
+            jq -n \
+              --arg version "$version" --argjson revision "$revision" --arg display "$display" \
+              --arg commit "$(jq -r .source.commit "$metadata")" \
+              --arg client_url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/$client" \
+              --arg client_sha "$(file_sha "incoming/$client")" --argjson client_size "$(file_size "incoming/$client")" \
+              --arg luci_url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/$luci" \
+              --arg luci_sha "$(file_sha "incoming/$luci")" --argjson luci_size "$(file_size "incoming/$luci")" \
+              '{version:$version,revision:$revision,display_version:$display,commit:$commit,targets:{openwrt_25_12_4_x86_64:{openwrt_release:"25.12.4",target:"x86/64",arch:"x86_64",package_format:"apk",candy_client:{url:$client_url,sha256:$client_sha,size:$client_size},luci_app_candy:{url:$luci_url,sha256:$luci_sha,size:$luci_size}}}}' > entry.json
+            comparison_version=$display
+          else
+            metadata=incoming/core-release-metadata.json
+            require_file "$metadata" 1048576
+            version=$(jq -er '.core.version' "$metadata")
+            release_tag="core-v$version"
+            test "$STAGING_TAG" = "incoming-$release_tag" || fail "Core staging tag mismatch"
+            jq -e --arg tag "$release_tag" '
+              .schema_version == 1 and .release_kind == "candy-core" and .release_tag == $tag and
+              .source.repository == "reTsubasa/candy-core" and (.source.commit | test("^[0-9a-f]{40}$")) and
+              .target.rust_target == "x86_64-unknown-linux-musl" and .target.os == "linux" and
+              .target.architecture == "x86_64" and .target.libc == "musl" and
+              .signature.format == "usign" and .signature.verified == true and (.artifacts | length) == 3
+            ' "$metadata" >/dev/null || fail "invalid Core release metadata"
+            base="candy-core-$version-x86_64-unknown-linux-musl"
+            bundle="$base.tar.gz"
+            checksum="$bundle.sha256"
+            manifest="$base.manifest.json"
+            expected=$(printf '%s\n' "$bundle" "$checksum" "$manifest" core-release-metadata.json | sort)
+            actual=$(find incoming -maxdepth 1 -type f -printf '%f\n' | sort)
+            test "$actual" = "$expected" || fail "unexpected Core release asset set"
+            require_file "incoming/$bundle" 134217728
+            require_file "incoming/$checksum" 65536
+            require_file "incoming/$manifest" 1048576
+            metadata_asset "$metadata" core-bundle "incoming/$bundle"
+            metadata_asset "$metadata" bundle-checksum "incoming/$checksum"
+            metadata_asset "$metadata" core-manifest "incoming/$manifest"
+            test "$(wc -l < "incoming/$checksum" | tr -d ' ')" = 1 || fail "unexpected Core checksum count"
+            (cd incoming && sha256sum -c "$checksum")
+            listing=$(tar -tzf "incoming/$bundle")
+            test "$listing" = $'candy-core\nmanifest.json\nmanifest.sig' || fail "invalid Core bundle contents"
+            tar -xOzf "incoming/$bundle" manifest.json > manifest.inner.json
+            tar -xOzf "incoming/$bundle" manifest.sig > manifest.inner.sig
+            cmp "incoming/$manifest" manifest.inner.json || fail "Core manifests differ"
+            usign -V -p keys/core-release.pub -m manifest.inner.json -x manifest.inner.sig || fail "Core manifest signature is invalid"
+            jq -e --arg version "$version" '
+              .schema_version == 1 and .process_api_version == 1 and
+              .core.core_version == $version and .core.core_api_version == 1 and
+              .artifact.target == "x86_64-unknown-linux-musl" and
+              .artifact.target_os == "linux" and .artifact.target_arch == "x86_64" and
+              .artifact.libc == "musl"
+            ' "incoming/$manifest" >/dev/null || fail "Core manifest contract mismatch"
+            key="v$(tr '.+-' '___' <<<"$version" | tr -d '\n')"
+            jq -n \
+              --arg version "$version" --arg commit "$(jq -r .source.commit "$metadata")" \
+              --argjson process_api "$(jq -r .core.process_api_version "$metadata")" \
+              --argjson core_api "$(jq -r .core.core_api_version "$metadata")" \
+              --arg protocol "$(jq -r .core.protocol_version "$metadata")" \
+              --arg url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/$bundle" \
+              --arg sha "$(file_sha "incoming/$bundle")" --argjson size "$(file_size "incoming/$bundle")" \
+              '{version:$version,commit:$commit,process_api_version:$process_api,core_api_version:$core_api,protocol_version:$protocol,targets:{linux_musl_x86_64:{target:"x86_64-unknown-linux-musl",os:"linux",libc:"musl",arch:"x86_64",url:$url,sha256:$sha,size:$size}}}' > entry.json
+            comparison_version=$version
+          fi
+
+          jq -e . entry.json >/dev/null
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+          echo "version=$comparison_version" >> "$GITHUB_OUTPUT"
+          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Publish assets and signed stable catalog
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_KEY: ${{ steps.artifact.outputs.key }}
+          RELEASE_VERSION: ${{ steps.artifact.outputs.version }}
+          RELEASE_TAG: ${{ steps.artifact.outputs.tag }}
+        run: |
+          set -euo pipefail
+          fail() { echo "finalize-release: $*" >&2; exit 1; }
+          test -n "$CATALOG_SIGNING_KEY" || fail "CANDY_CATALOG_SIGNING_KEY is not configured"
+          git pull --ff-only origin main
+          mkdir -p channels
+          if test -f channels/stable.json; then
+            jq -e '.schema_version == 1 and .channel == "stable" and (.sequence | type == "number")' channels/stable.json >/dev/null || fail "existing stable catalog is invalid"
+          else
+            jq -n '{schema_version:1,sequence:0,channel:"stable",published_at:null,runtime:{latest:null,releases:{}},core:{latest:null,releases:{}}}' > channels/stable.json
+          fi
+
+          current=$(jq -cS --arg kind "$RELEASE_KIND" --arg key "$RELEASE_KEY" '.[$kind].releases[$key] // null' channels/stable.json)
+          desired=$(jq -cS . entry.json)
+          latest_key=$(jq -r --arg kind "$RELEASE_KIND" '.[$kind].latest // empty' channels/stable.json)
+          changed=0
+          if test "$current" = null; then
+            if test -n "$latest_key"; then
+              if test "$RELEASE_KIND" = runtime; then
+                latest_version=$(jq -r --arg key "$latest_key" '.runtime.releases[$key].display_version' channels/stable.json)
+              else
+                latest_version=$(jq -r --arg key "$latest_key" '.core.releases[$key].version' channels/stable.json)
+              fi
+              dpkg --compare-versions "$RELEASE_VERSION" gt "$latest_version" || fail "release would move stable backward"
+            fi
+            changed=1
+          elif test "$current" != "$desired"; then
+            test "$latest_key" = "$RELEASE_KEY" || fail "non-latest catalog entry $RELEASE_KIND/$RELEASE_KEY is immutable"
+            changed=1
+          fi
+
+          if test "$changed" = 1; then
+            published_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+            jq --arg kind "$RELEASE_KIND" --arg key "$RELEASE_KEY" --arg published_at "$published_at" --slurpfile entry entry.json '
+              .sequence += 1 |
+              .published_at = $published_at |
+              .[$kind].releases[$key] = $entry[0] |
+              .[$kind].latest = $key
+            ' channels/stable.json > channels/stable.json.next
+            mv channels/stable.json.next channels/stable.json
+          fi
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" incoming/* --clobber
+          else
+            if test "$RELEASE_KIND" = runtime; then
+              title="Candy Runtime $RELEASE_VERSION"
+            else
+              title="Candy Core $RELEASE_VERSION"
+            fi
+            gh release create "$RELEASE_TAG" --draft --title "$title" \
+              --notes "Validated by the centralized Candy release workflow."
+            gh release upload "$RELEASE_TAG" incoming/*
+          fi
+          gh release edit "$RELEASE_TAG" --draft=false
+          if test "$changed" = 0; then
+            echo "Release and catalog entry already finalized"
+            gh release delete "$STAGING_TAG" --cleanup-tag --yes
+            exit 0
+          fi
+
+          key_file=$(mktemp)
+          chmod 0600 "$key_file"
+          printf '%s\n' "$CATALOG_SIGNING_KEY" > "$key_file"
+          usign -S -s "$key_file" -m channels/stable.json -x channels/stable.json.sig
+          usign -V -p keys/catalog-release.pub -m channels/stable.json -x channels/stable.json.sig
+
+          runtime_display=$(jq -r '.runtime.releases[.runtime.latest].display_version // "not published"' channels/stable.json)
+          core_display=$(jq -r '.core.releases[.core.latest].version // "not published"' channels/stable.json)
+          sequence=$(jq -r .sequence channels/stable.json)
+          published_at=$(jq -r .published_at channels/stable.json)
+          python3 - "$runtime_display" "$core_display" "$sequence" "$published_at" <<'PY'
+          import pathlib
+          import sys
+
+          path = pathlib.Path("README.md")
+          text = path.read_text()
+          start = "<!-- stable-status:start -->"
+          end = "<!-- stable-status:end -->"
+          block = "\n".join([
+              start,
+              "## Current stable channel",
+              "",
+              f"- Runtime: `{sys.argv[1]}`",
+              f"- Core: `{sys.argv[2]}`",
+              f"- Catalog sequence: `{sys.argv[3]}`",
+              f"- Published at: `{sys.argv[4]}`",
+              end,
+          ])
+          before, marker, remainder = text.partition(start)
+          if not marker:
+              raise SystemExit("README stable status markers are missing")
+          _, marker, after = remainder.partition(end)
+          if not marker:
+              raise SystemExit("README stable status end marker is missing")
+          path.write_text(before + block + after)
+          PY
+
+          git config user.name candy-release-bot
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add channels/stable.json channels/stable.json.sig README.md
+          git diff --cached --check
+          git commit -m "release: publish $RELEASE_TAG"
+          git push origin HEAD:main
+          gh release delete "$STAGING_TAG" --cleanup-tag --yes
