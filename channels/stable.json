@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "sequence": 2,
+  "sequence": 3,
   "channel": "stable",
-  "published_at": "2026-08-05T03:36:05Z",
+  "published_at": "2026-08-05T03:40:11Z",
   "runtime": {
     "latest": "v0_4_0_r2",
     "releases": {
@@ -37,7 +37,7 @@
     "releases": {
       "v0_3_4": {
         "version": "0.3.4",
-        "commit": "3e4b7a549a3820667e6c70e2f5da5e5e40a29359",
+        "commit": "0c4f4f928963bcbd3dff5ae2ef3969fc81cb624a",
         "process_api_version": 1,
         "core_api_version": 1,
         "protocol_version": "0.3",
@@ -48,8 +48,8 @@
             "libc": "musl",
             "arch": "x86_64",
             "url": "https://github.com/reTsubasa/candy-release/releases/download/core-v0.3.4/candy-core-0.3.4-x86_64-unknown-linux-musl.tar.gz",
-            "sha256": "10fb02d499c0dedb63520a7e2a1138e31dc3955ab95942ba591532ebd61c1bc9",
-            "size": 7670340
+            "sha256": "8bbcd4b06300460fd6a1553053dfa03eb40b546bf2d38b9ab7de09a24d688a9e",
+            "size": 7670335
           }
         }
       }
