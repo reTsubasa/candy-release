@@ -1,11 +1,36 @@
 {
   "schema_version": 1,
-  "sequence": 1,
+  "sequence": 2,
   "channel": "stable",
-  "published_at": "2026-08-05T03:34:21Z",
+  "published_at": "2026-08-05T03:36:05Z",
   "runtime": {
-    "latest": null,
-    "releases": {}
+    "latest": "v0_4_0_r2",
+    "releases": {
+      "v0_4_0_r2": {
+        "version": "0.4.0",
+        "revision": 2,
+        "display_version": "0.4.0-r2",
+        "commit": "3776a86348810bb89bef7bbf56e14df9881db7c9",
+        "targets": {
+          "openwrt_25_12_4_x86_64": {
+            "openwrt_release": "25.12.4",
+            "target": "x86/64",
+            "arch": "x86_64",
+            "package_format": "apk",
+            "candy_client": {
+              "url": "https://github.com/reTsubasa/candy-release/releases/download/runtime-v0.4.0-r2/candy-client-0.4.0-r2.apk",
+              "sha256": "560b572dbb40d21689f7430194e0e71af359d0717454a46d9d10305e036c831e",
+              "size": 1138832
+            },
+            "luci_app_candy": {
+              "url": "https://github.com/reTsubasa/candy-release/releases/download/runtime-v0.4.0-r2/luci-app-candy-0.4.0-r2.apk",
+              "sha256": "13570414e09c58266c087b12be4338d744c0c89319ba501c5c6cafc246f5dd22",
+              "size": 44259
+            }
+          }
+        }
+      }
+    }
   },
   "core": {
     "latest": "v0_3_4",
