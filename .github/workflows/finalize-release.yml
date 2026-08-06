@@ -136,10 +136,18 @@ jobs:
             payload_dir=$(mktemp -d)
             if command -v apk >/dev/null 2>&1; then
               apk extract --no-chown -p "$payload_dir" "incoming/$client" >/dev/null
+            elif command -v docker >/dev/null 2>&1; then
+              # OpenWrt APKs use apk-tools' signed package format, not a
+              # plain tar stream. Keep validation independent of the runner
+              # distribution by using a pinned Alpine apk-tools container.
+              docker run --rm --platform linux/amd64 \
+                -v "$PWD:/work:ro" \
+                -v "$payload_dir:/out" \
+                alpine:3.22 \
+                sh -ec 'apk extract --no-chown -p /out "/work/incoming/$1"' \
+                sh "$client"
             else
-              # OpenWrt APK artifacts are tar-compatible; keep the gate
-              # usable on the Ubuntu runner even when apk-tools is absent.
-              tar -xf "incoming/$client" -C "$payload_dir"
+              fail "OpenWrt apk-tools is unavailable and Docker cannot provide it"
             fi
             client_config="$payload_dir/etc/config/candy"
             client_init="$payload_dir/etc/init.d/candy"
