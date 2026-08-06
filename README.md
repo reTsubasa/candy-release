@@ -132,7 +132,11 @@ final Release is touched. A different hash for the current latest version is
 accepted and recorded as a new catalog sequence.
 
 The catalog signing key is held only as the protected
-`CANDY_CATALOG_SIGNING_KEY` Actions secret. The Core manifest signing key never
-leaves the local Core build machine. At least the current and previous
-published Runtime and Core assets should be retained for rollback. Any asset
-referenced by a signed catalog must not be deleted.
+`CANDY_CATALOG_SIGNING_KEY` Actions secret. The Core manifest signing key is
+held either by the offline Core release machine or by the private
+`candy-core` repository's protected `core-release-signing` Environment. It must never
+be committed to Git, attached to a Release, printed to logs, or cached. The
+protected workflow signs only after an isolated job reproduces an unsigned
+candidate from the exact protected-main commit. At least the current and
+previous published Runtime and Core assets should be retained for rollback.
+Any asset referenced by a signed catalog must not be deleted.

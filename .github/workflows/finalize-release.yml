@@ -129,6 +129,41 @@ jobs:
             test "$(build_value profile)" = x86_64 || fail "BUILD-INFO profile mismatch"
             test "$(wc -l < incoming/SHA256SUMS | tr -d ' ')" = 4 || fail "unexpected Runtime checksum count"
             (cd incoming && sha256sum -c SHA256SUMS)
+            # APK metadata and checksums alone do not prove that the package
+            # contains the product payload that was audited in Runtime. Do a
+            # real extraction and reject deployable placeholders or truncated
+            # bootstrap data before anything can become a stable release.
+            payload_dir=$(mktemp -d)
+            if command -v apk >/dev/null 2>&1; then
+              apk extract --no-chown -p "$payload_dir" "incoming/$client" >/dev/null
+            else
+              # OpenWrt APK artifacts are tar-compatible; keep the gate
+              # usable on the Ubuntu runner even when apk-tools is absent.
+              tar -xf "incoming/$client" -C "$payload_dir"
+            fi
+            client_config="$payload_dir/etc/config/candy"
+            client_init="$payload_dir/etc/init.d/candy"
+            rules_dir="$payload_dir/usr/share/candy/rulesets"
+            test -s "$client_config" || fail "Runtime APK is missing /etc/config/candy"
+            test -x "$client_init" || fail "Runtime APK is missing executable /etc/init.d/candy"
+            awk '
+              /^config node / { in_node=1; next }
+              /^config / { in_node=0 }
+              in_node && /option enabled '\''1'\''/ { found=1 }
+              END { exit found ? 1 : 0 }
+            ' "$client_config" || fail "Runtime APK contains an enabled default node"
+            ! grep -Eq "option (server|server_name) ['](127\\.0\\.0\\.1(:[0-9]+)?|localhost)" "$client_config" ||
+              fail "Runtime APK contains a deployable placeholder endpoint"
+            ! grep -Eq "option (server_pin|auth) ['][^']*(change-me|replace-me)" "$client_config" ||
+              fail "Runtime APK contains a placeholder credential"
+            test -s "$rules_dir/cn-ip.cidr" && test -s "$rules_dir/gfwlist.domains" || fail "Runtime APK is missing bootstrap rulesets"
+            cidr_count=$(sed 's/#.*//' "$rules_dir/cn-ip.cidr" | sed '/^[[:space:]]*$/d' | sort -u | wc -l | tr -d ' ')
+            domain_count=$(sed 's/#.*//' "$rules_dir/gfwlist.domains" | sed '/^[[:space:]]*$/d' | sort -u | wc -l | tr -d ' ')
+            test "$cidr_count" -ge 5000 || fail "Runtime APK China bootstrap has only $cidr_count entries"
+            test "$domain_count" -ge 4000 || fail "Runtime APK GFWList bootstrap has only $domain_count entries"
+            grep -Eq '^[0-9a-fA-F:]+/[0-9]+$' "$rules_dir/cn-ip.cidr" || fail "Runtime APK China bootstrap has no IPv6 CIDR"
+            grep -Fq 'fail_open_locked()' "$client_init" || fail "Runtime APK has no fail-open path"
+            grep -Fq '/var/lib/candy/service.lock' "$client_init" || fail "Runtime APK lifecycle lock is not persistent/root-owned"
             key="v$(tr '.+-' '___' <<<"$version" | tr -d '\n')_r$revision"
             jq -n \
               --arg version "$version" --argjson revision "$revision" --arg display "$display" \
