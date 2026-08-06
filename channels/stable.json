@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "sequence": 7,
+  "sequence": 8,
   "channel": "stable",
-  "published_at": "2026-08-06T09:14:01Z",
+  "published_at": "2026-08-06T09:45:51Z",
   "runtime": {
     "latest": "v0_4_0_r6",
     "releases": {
@@ -162,7 +162,7 @@
     }
   },
   "core": {
-    "latest": "v0_3_4",
+    "latest": "v0_3_5",
     "releases": {
       "v0_3_4": {
         "version": "0.3.4",
@@ -181,6 +181,46 @@
             "size": 7670335
           }
         }
+      },
+      "v0_3_5": {
+        "version": "0.3.5",
+        "commit": "15505758cd0c6887293d2d8aef0e93e7ff33e5d2",
+        "process_api_version": 1,
+        "core_api_version": 1,
+        "protocol_version": "0.3",
+        "targets": {
+          "linux_musl_x86_64": {
+            "target": "x86_64-unknown-linux-musl",
+            "os": "linux",
+            "libc": "musl",
+            "arch": "x86_64",
+            "url": "https://github.com/reTsubasa/candy-release/releases/download/core-v0.3.5/candy-core-0.3.5-x86_64-unknown-linux-musl.tar.gz",
+            "sha256": "561dd8c9262cc4179122fa4f70a89ad1107ceaf6d083ab6ab893d6ea629202a0",
+            "size": 7814406
+          }
+        },
+        "release_assets": [
+          {
+            "name": "candy-core-0.3.5-x86_64-unknown-linux-musl.manifest.json",
+            "sha256": "7842f0cc87bb4e144c11fda18bc0cd44fd57849f5dfcda9ff56724388a3b0fca",
+            "size": 3482
+          },
+          {
+            "name": "candy-core-0.3.5-x86_64-unknown-linux-musl.tar.gz",
+            "sha256": "561dd8c9262cc4179122fa4f70a89ad1107ceaf6d083ab6ab893d6ea629202a0",
+            "size": 7814406
+          },
+          {
+            "name": "candy-core-0.3.5-x86_64-unknown-linux-musl.tar.gz.sha256",
+            "sha256": "5c2e03e347f80a20db96bb636cde4c0f25718d4749ca32f23b928e6f4d21addb",
+            "size": 116
+          },
+          {
+            "name": "core-release-metadata.json",
+            "sha256": "0e6a8f8615ad7b6afc4729e84dc9eae5a986a0db1cec8ac5146ce09db8a070fa",
+            "size": 1286
+          }
+        ]
       }
     }
   }
