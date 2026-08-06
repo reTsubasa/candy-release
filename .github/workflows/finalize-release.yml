@@ -47,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y cmake gcc jq
+          sudo apt-get install -y cmake gcc jq zstd
           git init -q /tmp/usign
           git -C /tmp/usign remote add origin https://github.com/openwrt/usign.git
           timeout 60 git -C /tmp/usign fetch --depth 1 origin "$USIGN_COMMIT"
@@ -134,21 +134,25 @@ jobs:
             # real extraction and reject deployable placeholders or truncated
             # bootstrap data before anything can become a stable release.
             payload_dir=$(mktemp -d)
-            if command -v apk >/dev/null 2>&1; then
-              apk extract --no-chown -p "$payload_dir" "incoming/$client" >/dev/null
-            elif command -v docker >/dev/null 2>&1; then
-              # OpenWrt APKs use apk-tools' signed package format, not a
-              # plain tar stream. Keep validation independent of the runner
-              # distribution by using a pinned Alpine apk-tools container.
-              docker run --rm --platform linux/amd64 \
-                -v "$PWD:/work:ro" \
-                -v "$payload_dir:/out" \
-                alpine:3.22 \
-                sh -ec 'apk extract --no-chown -p /out "/work/incoming/$1"' \
-                sh "$client"
-            else
-              fail "OpenWrt apk-tools is unavailable and Docker cannot provide it"
-            fi
+            # OpenWrt APKs use OpenWrt's apk-tools format. Download the
+            # matching host tool from the SDK declared by BUILD-INFO rather
+            # than attempting to treat the signed package as a tar stream.
+            sdk_url=$(build_value sdk_url)
+            printf '%s' "$sdk_url" | grep -Eq '^https://downloads\.openwrt\.org/releases/25\.12\.4/targets/x86/64/openwrt-sdk-[^/]+\.tar\.zst$' ||
+              fail "BUILD-INFO SDK URL is outside the pinned OpenWrt release"
+            sdk_root=$(mktemp -d)
+            sdk_archive="$sdk_root/${sdk_url##*/}"
+            sdk_checksums="$sdk_root/sha256sums"
+            curl --fail --location --retry 3 --output "$sdk_archive" "$sdk_url"
+            curl --fail --location --retry 3 --output "$sdk_checksums" "${sdk_url%/*}/sha256sums"
+            sdk_sha=$(awk -v name="${sdk_url##*/}" '$2 == name || $2 == "*" name { print tolower($1); exit }' "$sdk_checksums")
+            printf '%s' "$sdk_sha" | grep -Eq '^[0-9a-f]{64}$' || fail "OpenWrt SDK checksum is missing"
+            test "$(file_sha "$sdk_archive")" = "$sdk_sha" || fail "OpenWrt SDK checksum mismatch"
+            tar --zstd -xf "$sdk_archive" -C "$sdk_root"
+            apk_tool=$(find "$sdk_root" -type f -path '*/staging_dir/host/bin/apk' -perm -111 -print -quit)
+            test -n "$apk_tool" || fail "OpenWrt SDK does not contain host apk-tools"
+            "$apk_tool" extract --allow-untrusted --no-chown \
+              --destination "$payload_dir" "incoming/$client" >/dev/null
             client_config="$payload_dir/etc/config/candy"
             client_init="$payload_dir/etc/init.d/candy"
             rules_dir="$payload_dir/usr/share/candy/rulesets"
