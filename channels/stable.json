@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "sequence": 12,
+  "sequence": 13,
   "channel": "stable",
-  "published_at": "2026-08-06T10:45:35Z",
+  "published_at": "2026-08-07T00:50:45Z",
   "runtime": {
-    "latest": "v0_4_0_r10",
+    "latest": "v0_4_0_r11",
     "releases": {
       "v0_4_0_r2": {
         "version": "0.4.0",
@@ -359,6 +359,57 @@
           {
             "name": "runtime-release-metadata.json",
             "sha256": "dee773ce7022747ee17338664e076f2701e7300830a5f0c43b2fdcba8663b080",
+            "size": 907
+          }
+        ]
+      },
+      "v0_4_0_r11": {
+        "version": "0.4.0",
+        "revision": 11,
+        "display_version": "0.4.0-r11",
+        "commit": "1e5d1f1c802bcc159295362c24e999536751c424",
+        "targets": {
+          "openwrt_25_12_4_x86_64": {
+            "openwrt_release": "25.12.4",
+            "target": "x86/64",
+            "arch": "x86_64",
+            "package_format": "apk",
+            "candy_client": {
+              "url": "https://github.com/reTsubasa/candy-release/releases/download/runtime-v0.4.0-r11/candy-client-0.4.0-r11.apk",
+              "sha256": "4e0fcaf998dcc41707a29155b7d18279eac22b96df374cd35fa8b4429c2e8518",
+              "size": 1194455
+            },
+            "luci_app_candy": {
+              "url": "https://github.com/reTsubasa/candy-release/releases/download/runtime-v0.4.0-r11/luci-app-candy-0.4.0-r11.apk",
+              "sha256": "f8f62de71248964b3833be16fe1bc0cf944452a07e89ff63df2bbd4709b6149b",
+              "size": 47914
+            }
+          }
+        },
+        "release_assets": [
+          {
+            "name": "BUILD-INFO",
+            "sha256": "64d38e8e2fb4ef0c0774b7164be33d93fadacc4da66e67f29028a90abbddf5eb",
+            "size": 350
+          },
+          {
+            "name": "SHA256SUMS",
+            "sha256": "0779850e85914b1f193bb839d16886b217f2581a1d826b7e3f3b06b5c59b7f2c",
+            "size": 361
+          },
+          {
+            "name": "candy-client-0.4.0-r11.apk",
+            "sha256": "4e0fcaf998dcc41707a29155b7d18279eac22b96df374cd35fa8b4429c2e8518",
+            "size": 1194455
+          },
+          {
+            "name": "luci-app-candy-0.4.0-r11.apk",
+            "sha256": "f8f62de71248964b3833be16fe1bc0cf944452a07e89ff63df2bbd4709b6149b",
+            "size": 47914
+          },
+          {
+            "name": "runtime-release-metadata.json",
+            "sha256": "6d2ea8af89ee5d5ec24558c15b2e4dabc19932c4eec934453b3b997f1d2c4f0e",
             "size": 907
           }
         ]
