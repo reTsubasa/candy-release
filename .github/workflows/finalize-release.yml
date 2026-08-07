@@ -42,6 +42,9 @@ jobs:
       - name: Test catalog replacement policy
         run: .github/scripts/catalog-policy-test.sh
 
+      - name: Test Runtime ruleset verification policy
+        run: .github/scripts/runtime-rulesets-verifier-test.sh
+
       - name: Build pinned catalog verifier
         shell: bash
         run: |
@@ -169,11 +172,8 @@ jobs:
             ! grep -Eq "option (server_pin|auth) ['][^']*(change-me|replace-me)" "$client_config" ||
               fail "Runtime APK contains a placeholder credential"
             test -s "$rules_dir/cn-ip.cidr" && test -s "$rules_dir/gfwlist.domains" || fail "Runtime APK is missing bootstrap rulesets"
-            cidr_count=$(sed 's/#.*//' "$rules_dir/cn-ip.cidr" | sed '/^[[:space:]]*$/d' | sort -u | wc -l | tr -d ' ')
-            domain_count=$(sed 's/#.*//' "$rules_dir/gfwlist.domains" | sed '/^[[:space:]]*$/d' | sort -u | wc -l | tr -d ' ')
-            test "$cidr_count" -ge 5000 || fail "Runtime APK China bootstrap has only $cidr_count entries"
-            test "$domain_count" -ge 4000 || fail "Runtime APK GFWList bootstrap has only $domain_count entries"
-            grep -Eq '^[0-9a-fA-F:]+/[0-9]+$' "$rules_dir/cn-ip.cidr" || fail "Runtime APK China bootstrap has no IPv6 CIDR"
+            "$GITHUB_WORKSPACE/.github/scripts/verify-runtime-rulesets.sh" "$rules_dir" >/dev/null ||
+              fail "Runtime APK bootstrap rulesets do not match their reviewed manifest"
             grep -Fq 'fail_open_locked()' "$client_init" || fail "Runtime APK has no fail-open path"
             grep -Fq '/var/lib/candy/service.lock' "$client_init" || fail "Runtime APK lifecycle lock is not persistent/root-owned"
             key="v$(tr '.+-' '___' <<<"$version" | tr -d '\n')_r$revision"
