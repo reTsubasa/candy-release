@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "sequence": 19,
+  "sequence": 20,
   "channel": "stable",
-  "published_at": "2026-08-07T05:47:21Z",
+  "published_at": "2026-08-07T05:49:16Z",
   "runtime": {
     "latest": "v0_4_0_r16",
     "releases": {
@@ -672,7 +672,7 @@
     }
   },
   "core": {
-    "latest": "v0_3_6",
+    "latest": "v0_3_7",
     "releases": {
       "v0_3_4": {
         "version": "0.3.4",
@@ -768,6 +768,46 @@
           {
             "name": "core-release-metadata.json",
             "sha256": "680a4a7ec582c4c9d270f8d73705dd143fd3b2e2b83261bbbe1b2419dd7fa19d",
+            "size": 1286
+          }
+        ]
+      },
+      "v0_3_7": {
+        "version": "0.3.7",
+        "commit": "b8233ee774dae8c29ace43b791476ff3c016a614",
+        "process_api_version": 1,
+        "core_api_version": 1,
+        "protocol_version": "0.3",
+        "targets": {
+          "linux_musl_x86_64": {
+            "target": "x86_64-unknown-linux-musl",
+            "os": "linux",
+            "libc": "musl",
+            "arch": "x86_64",
+            "url": "https://github.com/reTsubasa/candy-release/releases/download/core-v0.3.7/candy-core-0.3.7-x86_64-unknown-linux-musl.tar.gz",
+            "sha256": "e89387694dfc2904fdd5b5944911bda0ee2f6370e00ccd1c2cb039929be1d76c",
+            "size": 7858939
+          }
+        },
+        "release_assets": [
+          {
+            "name": "candy-core-0.3.7-x86_64-unknown-linux-musl.manifest.json",
+            "sha256": "04d988543631ee51cbf386eabd551ddadb34ff8712bbe667790fbd15478e5f05",
+            "size": 3761
+          },
+          {
+            "name": "candy-core-0.3.7-x86_64-unknown-linux-musl.tar.gz",
+            "sha256": "e89387694dfc2904fdd5b5944911bda0ee2f6370e00ccd1c2cb039929be1d76c",
+            "size": 7858939
+          },
+          {
+            "name": "candy-core-0.3.7-x86_64-unknown-linux-musl.tar.gz.sha256",
+            "sha256": "ddacf5e0c1d230bc39e8c946938403786392733463b2bd3de24c31acdfb7f393",
+            "size": 116
+          },
+          {
+            "name": "core-release-metadata.json",
+            "sha256": "3f405730fcba9793c38147e7747551d426c11cd7a22ca39122964be3daf55d08",
             "size": 1286
           }
         ]
