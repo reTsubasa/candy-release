@@ -362,12 +362,6 @@ jobs:
             release_write=1
           fi
 
-          if test "$decision" = unchanged && test "$release_write" = 0; then
-            echo "Release and catalog entry already finalized"
-            gh release delete "$STAGING_TAG" --yes || true
-            exit 0
-          fi
-
           if test "$decision" = unchanged && test "$is_latest" = 1 && test "$release_write" = 1; then
             changed=1
           fi
@@ -384,6 +378,12 @@ jobs:
             fail "tag exists without a formal Release; refusing to reuse it"
           fi
           tag_mutated=0
+
+          if test "$decision" = unchanged && test "$release_write" = 0; then
+            echo "Release and catalog entry already finalized"
+            gh release delete "$STAGING_TAG" --yes || true
+            exit 0
+          fi
 
           if test "$changed" = 1; then
             published_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
