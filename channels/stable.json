@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "sequence": 24,
+  "sequence": 25,
   "channel": "stable",
-  "published_at": "2026-08-10T03:55:21Z",
+  "published_at": "2026-08-10T04:05:07Z",
   "runtime": {
     "latest": "v0_4_0_r19",
     "releases": {
@@ -927,7 +927,7 @@
     }
   },
   "core": {
-    "latest": "v0_3_8",
+    "latest": "v0_3_9",
     "releases": {
       "v0_3_4": {
         "version": "0.3.4",
@@ -1104,6 +1104,70 @@
             "name": "core-release-metadata.json",
             "sha256": "72db8e70ae7a8523f863552e3e6f32b9ab1fbcf984765cb9c4f887114ee72907",
             "size": 1286
+          }
+        ]
+      },
+      "v0_3_9": {
+        "version": "0.3.9",
+        "commit": "8e80ea99f899524a20b959d2ec6cd35d2fe84b8f",
+        "process_api_version": 1,
+        "core_api_version": 1,
+        "protocol_version": "0.3",
+        "targets": {
+          "linux_musl_x86_64": {
+            "target": "x86_64-unknown-linux-musl",
+            "os": "linux",
+            "libc": "musl",
+            "arch": "x86_64",
+            "url": "https://github.com/reTsubasa/candy-release/releases/download/core-v0.3.9/candy-core-0.3.9-x86_64-unknown-linux-musl.tar.gz",
+            "sha256": "688344990a1afe782aa658a63c38589d14bde7623c5596d667442669b77cd1c8",
+            "size": 7872547
+          },
+          "linux_musl_armv7": {
+            "target": "armv7-unknown-linux-musleabihf",
+            "os": "linux",
+            "libc": "musl",
+            "arch": "arm",
+            "url": "https://github.com/reTsubasa/candy-release/releases/download/core-v0.3.9/candy-core-0.3.9-armv7-unknown-linux-musleabihf.tar.gz",
+            "sha256": "a6ee282832ee65dfe8b9872bc58a42d107078b33c305f3bd14c8a08c818c4cbe",
+            "size": 6471367
+          }
+        },
+        "release_assets": [
+          {
+            "name": "candy-core-0.3.9-armv7-unknown-linux-musleabihf.manifest.json",
+            "sha256": "63484382e9d2e4099573a1deb17e6b4e422033a57b8393285ac0e36a716634d2",
+            "size": 4147
+          },
+          {
+            "name": "candy-core-0.3.9-armv7-unknown-linux-musleabihf.tar.gz",
+            "sha256": "a6ee282832ee65dfe8b9872bc58a42d107078b33c305f3bd14c8a08c818c4cbe",
+            "size": 6471367
+          },
+          {
+            "name": "candy-core-0.3.9-armv7-unknown-linux-musleabihf.tar.gz.sha256",
+            "sha256": "53a2d43bb688bac6ebdd51d66b3416fd2e5e9ff8ebb7bc0a0fecbca732e67cea",
+            "size": 121
+          },
+          {
+            "name": "candy-core-0.3.9-x86_64-unknown-linux-musl.manifest.json",
+            "sha256": "1dcb6eb490014f6147e739c716c32ed8f5869239d3101120554b5f295362253e",
+            "size": 4144
+          },
+          {
+            "name": "candy-core-0.3.9-x86_64-unknown-linux-musl.tar.gz",
+            "sha256": "688344990a1afe782aa658a63c38589d14bde7623c5596d667442669b77cd1c8",
+            "size": 7872547
+          },
+          {
+            "name": "candy-core-0.3.9-x86_64-unknown-linux-musl.tar.gz.sha256",
+            "sha256": "f10fd5a58bfee8d242a63dd017db4858807b0779cc2d7543bcaba57c307bece8",
+            "size": 116
+          },
+          {
+            "name": "core-release-metadata.json",
+            "sha256": "6e3aac225217a8715cf60767c08a5b11b5dbd1883d85122f891aef7599abb326",
+            "size": 4347
           }
         ]
       }
