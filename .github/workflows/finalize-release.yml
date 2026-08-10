@@ -77,13 +77,14 @@ jobs:
             test "$size" -gt 0 && test "$size" -le "$maximum" || fail "invalid asset size: $path"
           }
           metadata_asset() {
-            local metadata=$1 component=$2 path=$3 expected_sha expected_size
-            expected_sha=$(jq -er --arg component "$component" '.artifacts[] | select(.component == $component) | .sha256' "$metadata")
-            expected_size=$(jq -er --arg component "$component" '.artifacts[] | select(.component == $component) | .size_bytes' "$metadata")
+            local metadata=$1 component=$2 path=$3 expected_sha expected_size name
+            name=${path##*/}
+            expected_sha=$(jq -er --arg component "$component" --arg name "$name" '.artifacts[] | select(.component == $component and .name == $name) | .sha256' "$metadata")
+            expected_size=$(jq -er --arg component "$component" --arg name "$name" '.artifacts[] | select(.component == $component and .name == $name) | .size_bytes' "$metadata")
             test "$(file_sha "$path")" = "$expected_sha" || fail "metadata SHA mismatch: $path"
             test "$(file_size "$path")" = "$expected_size" || fail "metadata size mismatch: $path"
           }
-          build_value() { sed -n "s/^$1=//p" incoming/BUILD-INFO | tail -1; }
+          build_value() { local file=incoming/BUILD-INFO; case "${2:-}" in '') ;; *) file=$2 ;; esac; sed -n "s/^$1=//p" "$file" | tail -1; }
 
           case "$RELEASE_KIND:$STAGING_TAG" in
             runtime:incoming-runtime-v[0-9]*|core:incoming-core-v[0-9]*) ;;
@@ -105,33 +106,45 @@ jobs:
             release_tag="runtime-v$display"
             test "$STAGING_TAG" = "incoming-$release_tag" || fail "Runtime staging tag mismatch"
             jq -e --arg tag "$release_tag" '
-              .schema_version == 1 and
-              .release_kind == "candy-runtime-openwrt-client" and
-              .release_tag == $tag and
-              .source.repository == "reTsubasa/candy-runtime" and
-              (.source.commit | test("^[0-9a-f]{40}$")) and
-              .target.platform == "openwrt" and .target.role == "client" and
-              .target.openwrt_release == "25.12.4" and
-              .target.profile == "x86_64" and .target.architecture == "x86_64" and
-              .target.package_format == "apk" and (.artifacts | length) == 2
+              .schema_version == 2 and .release_kind == "candy-runtime-openwrt-client" and
+              .release_tag == $tag and .source.repository == "reTsubasa/candy-runtime" and
+              (.source.commit | test("^[0-9a-f]{40,64}$")) and
+              (.targets | type == "array") and
+              ([.targets[].target_id] | sort) == ["ipq40xx-generic-arm_cortex-a7_neon-vfpv4","x86_64"] and
+              ([.artifacts[].component] | sort) == ["luci","luci","runtime-client","runtime-client"]
             ' "$metadata" >/dev/null || fail "invalid Runtime release metadata"
-            client="candy-client-$display.apk"
-            luci="luci-app-candy-$display.apk"
-            expected=$(printf '%s\n' BUILD-INFO SHA256SUMS "$client" "$luci" runtime-release-metadata.json | sort)
+            expected=$(jq -r '.artifacts[].name' "$metadata" | sort)
+            expected=$(printf '%s\n' "$expected" BUILD-INFO-ipq40xx-generic-arm_cortex-a7_neon-vfpv4 BUILD-INFO-x86_64 SHA256SUMS-ipq40xx-generic-arm_cortex-a7_neon-vfpv4 SHA256SUMS-x86_64 runtime-release-metadata-ipq40xx-generic-arm_cortex-a7_neon-vfpv4.json runtime-release-metadata-x86_64.json runtime-release-metadata.json | sort)
             actual=$(find incoming -maxdepth 1 -type f -printf '%f\n' | sort)
             test "$actual" = "$expected" || fail "unexpected Runtime release asset set"
-            require_file "incoming/$client" 16777216
-            require_file "incoming/$luci" 16777216
-            require_file incoming/BUILD-INFO 65536
-            require_file incoming/SHA256SUMS 65536
-            metadata_asset "$metadata" runtime-client "incoming/$client"
-            metadata_asset "$metadata" luci "incoming/$luci"
-            test "$(build_value runtime_version)" = "$version" || fail "BUILD-INFO Runtime version mismatch"
-            test "$(build_value runtime_revision)" = "$revision" || fail "BUILD-INFO Runtime revision mismatch"
-            test "$(build_value openwrt_release)" = 25.12.4 || fail "BUILD-INFO OpenWrt release mismatch"
-            test "$(build_value profile)" = x86_64 || fail "BUILD-INFO profile mismatch"
-            test "$(wc -l < incoming/SHA256SUMS | tr -d ' ')" = 4 || fail "unexpected Runtime checksum count"
+            for target_id in x86_64 ipq40xx-generic-arm_cortex-a7_neon-vfpv4; do
+              target_metadata="incoming/runtime-release-metadata-$target_id.json"
+              require_file "$target_metadata" 1048576
+              jq -e --arg id "$target_id" '
+                .schema_version == 2 and .target.target_id == $id and
+                .target.platform == "openwrt" and .target.role == "client" and
+                .target.openwrt_release == "25.12.4" and .target.package_format == "apk" and
+                (( $id == "x86_64" and .target.profile == "x86_64" and .target.openwrt_target == "x86/64" and .target.architecture == "x86_64" and .target.package_architecture == "x86_64") or
+                 ( $id == "ipq40xx-generic-arm_cortex-a7_neon-vfpv4" and .target.profile == "ipq40xx-generic" and .target.openwrt_target == "ipq40xx/generic" and .target.architecture == "armv7" and .target.package_architecture == "arm_cortex-a7_neon-vfpv4"))
+              ' "$target_metadata" >/dev/null || fail "invalid target Runtime metadata"
+              build_info="incoming/BUILD-INFO-$target_id"
+              require_file "$build_info" 65536
+              test "$(build_value runtime_version "$build_info")" = "$version" || fail "BUILD-INFO Runtime version mismatch"
+              test "$(build_value runtime_revision "$build_info")" = "$revision" || fail "BUILD-INFO Runtime revision mismatch"
+              test "$(sed -n 's/^profile=//p' "$build_info")" = "$([ "$target_id" = x86_64 ] && printf x86_64 || printf ipq40xx-generic)" || fail "BUILD-INFO profile mismatch"
+              case "$target_id" in
+                x86_64) printf '%s' "$(build_value sdk_url "$build_info")" | grep -Eq '^https://downloads\.openwrt\.org/releases/25\.12\.4/targets/x86/64/openwrt-sdk-[^/]+\.tar\.zst$' || fail "x86 SDK URL is outside the pinned release" ;;
+                ipq40xx-generic-arm_cortex-a7_neon-vfpv4) printf '%s' "$(build_value sdk_url "$build_info")" | grep -Eq '^https://downloads\.openwrt\.org/releases/25\.12\.4/targets/ipq40xx/generic/openwrt-sdk-[^/]+\.tar\.zst$' || fail "IPQ40xx SDK URL is outside the pinned release" ;;
+              esac
+              for component in runtime-client luci; do
+                artifact=$(jq -r --arg id "$target_id" --arg c "$component" '.artifacts[] | select(.component == $c) | .name' "$target_metadata")
+                require_file "incoming/$artifact" 16777216
+                metadata_asset "$target_metadata" "$component" "incoming/$artifact"
+              done
+            done
+            require_file incoming/SHA256SUMS 131072
             (cd incoming && sha256sum -c SHA256SUMS)
+            client=$(jq -r '.artifacts[] | select(.component == "runtime-client") | .name' incoming/runtime-release-metadata-x86_64.json)
             # APK metadata and checksums alone do not prove that the package
             # contains the product payload that was audited in Runtime. Do a
             # real extraction and reject deployable placeholders or truncated
@@ -140,7 +153,7 @@ jobs:
             # OpenWrt APKs use OpenWrt's apk-tools format. Download the
             # matching host tool from the SDK declared by BUILD-INFO rather
             # than attempting to treat the signed package as a tar stream.
-            sdk_url=$(build_value sdk_url)
+            sdk_url=$(build_value sdk_url incoming/BUILD-INFO-x86_64)
             printf '%s' "$sdk_url" | grep -Eq '^https://downloads\.openwrt\.org/releases/25\.12\.4/targets/x86/64/openwrt-sdk-[^/]+\.tar\.zst$' ||
               fail "BUILD-INFO SDK URL is outside the pinned OpenWrt release"
             sdk_root=$(mktemp -d)
@@ -182,9 +195,13 @@ jobs:
               --arg commit "$(jq -r .source.commit "$metadata")" \
               --arg client_url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/$client" \
               --arg client_sha "$(file_sha "incoming/$client")" --argjson client_size "$(file_size "incoming/$client")" \
-              --arg luci_url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/$luci" \
-              --arg luci_sha "$(file_sha "incoming/$luci")" --argjson luci_size "$(file_size "incoming/$luci")" \
-              '{version:$version,revision:$revision,display_version:$display,commit:$commit,targets:{openwrt_25_12_4_x86_64:{openwrt_release:"25.12.4",target:"x86/64",arch:"x86_64",package_format:"apk",candy_client:{url:$client_url,sha256:$client_sha,size:$client_size},luci_app_candy:{url:$luci_url,sha256:$luci_sha,size:$luci_size}}}}' > entry.json
+              --arg luci_url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/$(jq -r '.artifacts[] | select(.component == "luci") | .name' incoming/runtime-release-metadata-x86_64.json)" \
+              --arg luci_sha "$(jq -r '.artifacts[] | select(.component == "luci") | .sha256' incoming/runtime-release-metadata-x86_64.json)" --argjson luci_size "$(jq -r '.artifacts[] | select(.component == "luci") | .size_bytes' incoming/runtime-release-metadata-x86_64.json)" \
+              --arg arm_client_url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/$(jq -r '.artifacts[] | select(.component == "runtime-client") | .name' incoming/runtime-release-metadata-ipq40xx-generic-arm_cortex-a7_neon-vfpv4.json)" \
+              --arg arm_client_sha "$(jq -r '.artifacts[] | select(.component == "runtime-client") | .sha256' incoming/runtime-release-metadata-ipq40xx-generic-arm_cortex-a7_neon-vfpv4.json)" --argjson arm_client_size "$(jq -r '.artifacts[] | select(.component == "runtime-client") | .size_bytes' incoming/runtime-release-metadata-ipq40xx-generic-arm_cortex-a7_neon-vfpv4.json)" \
+              --arg arm_luci_url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/$(jq -r '.artifacts[] | select(.component == "luci") | .name' incoming/runtime-release-metadata-ipq40xx-generic-arm_cortex-a7_neon-vfpv4.json)" \
+              --arg arm_luci_sha "$(jq -r '.artifacts[] | select(.component == "luci") | .sha256' incoming/runtime-release-metadata-ipq40xx-generic-arm_cortex-a7_neon-vfpv4.json)" --argjson arm_luci_size "$(jq -r '.artifacts[] | select(.component == "luci") | .size_bytes' incoming/runtime-release-metadata-ipq40xx-generic-arm_cortex-a7_neon-vfpv4.json)" \
+              '{version:$version,revision:$revision,display_version:$display,commit:$commit,targets:{openwrt_25_12_4_x86_64:{openwrt_release:"25.12.4",target:"x86/64",arch:"x86_64",package_format:"apk",candy_client:{url:$client_url,sha256:$client_sha,size:$client_size},luci_app_candy:{url:$luci_url,sha256:$luci_sha,size:$luci_size}},openwrt_25_12_4_arm_cortex_a7_neon_vfpv4:{openwrt_release:"25.12.4",target:"ipq40xx/generic",arch:"arm_cortex-a7_neon-vfpv4",package_format:"apk",candy_client:{url:$arm_client_url,sha256:$arm_client_sha,size:$arm_client_size},luci_app_candy:{url:$arm_luci_url,sha256:$arm_luci_sha,size:$arm_luci_size}}}}' > entry.json
             comparison_version=$display
           else
             metadata=incoming/core-release-metadata.json
@@ -193,17 +210,17 @@ jobs:
             release_tag="core-v$version"
             test "$STAGING_TAG" = "incoming-$release_tag" || fail "Core staging tag mismatch"
             jq -e --arg tag "$release_tag" '
-              .schema_version == 1 and .release_kind == "candy-core" and .release_tag == $tag and
-              .source.repository == "reTsubasa/candy-core" and (.source.commit | test("^[0-9a-f]{40}$")) and
-              .target.rust_target == "x86_64-unknown-linux-musl" and .target.os == "linux" and
-              .target.architecture == "x86_64" and .target.libc == "musl" and
-              .signature.format == "usign" and .signature.verified == true and (.artifacts | length) == 3
+              .schema_version == 2 and .release_kind == "candy-core" and .release_tag == $tag and
+              .source.repository == "reTsubasa/candy-core" and (.source.commit | test("^[0-9a-f]{40,64}$")) and
+              ([.targets[].rust_target] | sort) == ["armv7-unknown-linux-musleabihf","x86_64-unknown-linux-musl"] and
+              (.artifacts | length) == 6 and .signature.format == "usign" and .signature.verified == true
             ' "$metadata" >/dev/null || fail "invalid Core release metadata"
             base="candy-core-$version-x86_64-unknown-linux-musl"
             bundle="$base.tar.gz"
             checksum="$bundle.sha256"
             manifest="$base.manifest.json"
-            expected=$(printf '%s\n' "$bundle" "$checksum" "$manifest" core-release-metadata.json | sort)
+            expected=$(jq -r '.artifacts[].name' "$metadata" | sort)
+            expected=$(printf '%s\n' "$expected" core-release-metadata.json | sort)
             actual=$(find incoming -maxdepth 1 -type f -printf '%f\n' | sort)
             test "$actual" = "$expected" || fail "unexpected Core release asset set"
             require_file "incoming/$bundle" 134217728
@@ -220,13 +237,23 @@ jobs:
             tar -xOzf "incoming/$bundle" manifest.sig > manifest.inner.sig
             cmp "incoming/$manifest" manifest.inner.json || fail "Core manifests differ"
             usign -V -p keys/core-release.pub -m manifest.inner.json -x manifest.inner.sig || fail "Core manifest signature is invalid"
-            jq -e --arg version "$version" '
-              .schema_version == 1 and .process_api_version == 1 and
-              .core.core_version == $version and .core.core_api_version == 1 and
-              .artifact.target == "x86_64-unknown-linux-musl" and
-              .artifact.target_os == "linux" and .artifact.target_arch == "x86_64" and
-              .artifact.libc == "musl"
-            ' "incoming/$manifest" >/dev/null || fail "Core manifest contract mismatch"
+            jq -e --arg version "$version" '.schema_version == 1 and .process_api_version == 1 and .core.core_version == $version and .core.core_api_version == 1 and .artifact.target == "x86_64-unknown-linux-musl" and .artifact.libc == "musl"' "incoming/$manifest" >/dev/null || fail "Core manifest contract mismatch"
+            arm_base="candy-core-$version-armv7-unknown-linux-musleabihf"
+            arm_bundle="$arm_base.tar.gz"
+            arm_checksum="$arm_bundle.sha256"
+            arm_manifest="$arm_base.manifest.json"
+            require_file "incoming/$arm_bundle" 134217728
+            require_file "incoming/$arm_checksum" 65536
+            require_file "incoming/$arm_manifest" 1048576
+            metadata_asset "$metadata" core-bundle "incoming/$arm_bundle"
+            metadata_asset "$metadata" bundle-checksum "incoming/$arm_checksum"
+            metadata_asset "$metadata" core-manifest "incoming/$arm_manifest"
+            (cd incoming && sha256sum -c "$arm_checksum")
+            tar -xOzf "incoming/$arm_bundle" manifest.json > arm-manifest.inner.json
+            tar -xOzf "incoming/$arm_bundle" manifest.sig > arm-manifest.inner.sig
+            cmp "incoming/$arm_manifest" arm-manifest.inner.json || fail "ARM Core manifests differ"
+            usign -V -p keys/core-release.pub -m arm-manifest.inner.json -x arm-manifest.inner.sig || fail "ARM Core manifest signature is invalid"
+            jq -e --arg version "$version" '.schema_version == 1 and .core.core_version == $version and .artifact.target == "armv7-unknown-linux-musleabihf" and .artifact.libc == "musl"' "incoming/$arm_manifest" >/dev/null || fail "ARM Core manifest contract mismatch"
             key="v$(tr '.+-' '___' <<<"$version" | tr -d '\n')"
             jq -n \
               --arg version "$version" --arg commit "$(jq -r .source.commit "$metadata")" \
@@ -235,7 +262,9 @@ jobs:
               --arg protocol "$(jq -r .core.protocol_version "$metadata")" \
               --arg url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/$bundle" \
               --arg sha "$(file_sha "incoming/$bundle")" --argjson size "$(file_size "incoming/$bundle")" \
-              '{version:$version,commit:$commit,process_api_version:$process_api,core_api_version:$core_api,protocol_version:$protocol,targets:{linux_musl_x86_64:{target:"x86_64-unknown-linux-musl",os:"linux",libc:"musl",arch:"x86_64",url:$url,sha256:$sha,size:$size}}}' > entry.json
+              --arg arm_url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/$arm_bundle" \
+              --arg arm_sha "$(file_sha "incoming/$arm_bundle")" --argjson arm_size "$(file_size "incoming/$arm_bundle")" \
+              '{version:$version,commit:$commit,process_api_version:$process_api,core_api_version:$core_api,protocol_version:$protocol,targets:{linux_musl_x86_64:{target:"x86_64-unknown-linux-musl",os:"linux",libc:"musl",arch:"x86_64",url:$url,sha256:$sha,size:$size},linux_musl_armv7:{target:"armv7-unknown-linux-musleabihf",os:"linux",libc:"musl",arch:"arm",url:$arm_url,sha256:$arm_sha,size:$arm_size}}}' > entry.json
             comparison_version=$version
           fi
 
