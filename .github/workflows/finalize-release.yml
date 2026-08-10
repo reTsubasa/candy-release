@@ -114,7 +114,7 @@ jobs:
               ([.artifacts[].component] | sort) == ["luci","luci","runtime-client","runtime-client"]
             ' "$metadata" >/dev/null || fail "invalid Runtime release metadata"
             expected=$(jq -r '.artifacts[].name' "$metadata" | sort)
-            expected=$(printf '%s\n' "$expected" BUILD-INFO-ipq40xx-generic-arm_cortex-a7_neon-vfpv4 BUILD-INFO-x86_64 SHA256SUMS-ipq40xx-generic-arm_cortex-a7_neon-vfpv4 SHA256SUMS-x86_64 runtime-release-metadata-ipq40xx-generic-arm_cortex-a7_neon-vfpv4.json runtime-release-metadata-x86_64.json runtime-release-metadata.json | sort)
+            expected=$(printf '%s\n' "$expected" BUILD-INFO-ipq40xx-generic-arm_cortex-a7_neon-vfpv4 BUILD-INFO-x86_64 SHA256SUMS SHA256SUMS-ipq40xx-generic-arm_cortex-a7_neon-vfpv4 SHA256SUMS-x86_64 runtime-release-metadata-ipq40xx-generic-arm_cortex-a7_neon-vfpv4.json runtime-release-metadata-x86_64.json runtime-release-metadata.json | sort)
             actual=$(find incoming -maxdepth 1 -type f -printf '%f\n' | sort)
             test "$actual" = "$expected" || fail "unexpected Runtime release asset set"
             for target_id in x86_64 ipq40xx-generic-arm_cortex-a7_neon-vfpv4; do
