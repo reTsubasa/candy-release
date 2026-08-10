@@ -172,6 +172,7 @@ jobs:
             client_config="$payload_dir/etc/config/candy"
             client_init="$payload_dir/etc/init.d/candy"
             rules_dir="$payload_dir/usr/share/candy/rulesets"
+            core_release_key="$payload_dir/usr/share/candy/keys/core-release.pub"
             test -s "$client_config" || fail "Runtime APK is missing /etc/config/candy"
             test -x "$client_init" || fail "Runtime APK is missing executable /etc/init.d/candy"
             awk '
@@ -187,6 +188,8 @@ jobs:
             test -s "$rules_dir/cn-ip.cidr" && test -s "$rules_dir/gfwlist.domains" || fail "Runtime APK is missing bootstrap rulesets"
             "$GITHUB_WORKSPACE/.github/scripts/verify-runtime-rulesets.sh" "$rules_dir" >/dev/null ||
               fail "Runtime APK bootstrap rulesets do not match their reviewed manifest"
+            test -f "$core_release_key" && test ! -L "$core_release_key" || fail "Runtime APK is missing the Core release public key"
+            test "$(usign -F -p "$core_release_key")" = d78de22abfca5b57 || fail "Runtime APK contains the wrong Core release public key"
             grep -Fq 'fail_open_locked()' "$client_init" || fail "Runtime APK has no fail-open path"
             grep -Fq '/var/lib/candy/service.lock' "$client_init" || fail "Runtime APK lifecycle lock is not persistent/root-owned"
             key="v$(tr '.+-' '___' <<<"$version" | tr -d '\n')_r$revision"
