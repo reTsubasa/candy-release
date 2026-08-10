@@ -372,6 +372,19 @@ jobs:
             changed=1
           fi
 
+          tag_ref="refs/tags/$RELEASE_TAG"
+          remote_tag_commit=$(git ls-remote --tags origin "$tag_ref^{}" | awk 'NR == 1 { print $1 }')
+          if test -z "$remote_tag_commit"; then
+            remote_tag_commit=$(git ls-remote --tags origin "$tag_ref" | awk 'NR == 1 { print $1 }')
+          fi
+          if test "$formal_existed" = 1 && test -z "$remote_tag_commit"; then
+            fail "formal Release exists but its tag is missing"
+          fi
+          if test "$formal_existed" = 0 && test -n "$remote_tag_commit"; then
+            fail "tag exists without a formal Release; refusing to reuse it"
+          fi
+          tag_mutated=0
+
           if test "$changed" = 1; then
             published_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
             jq --arg kind "$RELEASE_KIND" --arg key "$RELEASE_KEY" --arg published_at "$published_at" --slurpfile entry entry.json '
@@ -425,6 +438,31 @@ jobs:
             git diff --cached --check
             git commit -m "release: publish $RELEASE_TAG"
           fi
+          catalog_commit=$(git rev-parse HEAD)
+
+          remote_ref_commit() {
+            local ref=$1
+            git ls-remote origin "$ref" | awk 'NR == 1 { print $1 }'
+          }
+          push_release_tag() {
+            local commit=$1 force=${2:-0} observed
+            if test "$force" = 1; then
+              if git push --force origin "$commit:$tag_ref"; then return 0; fi
+            elif git push origin "$commit:$tag_ref"; then
+              return 0
+            fi
+            observed=$(remote_ref_commit "$tag_ref^{}")
+            test -n "$observed" || observed=$(remote_ref_commit "$tag_ref")
+            test "$observed" = "$commit"
+          }
+          push_catalog_commit() {
+            local observed
+            if git push origin HEAD:main; then return 0; fi
+            observed=$(remote_ref_commit refs/heads/main)
+            if test "$observed" = "$catalog_commit"; then return 0; fi
+            git fetch --quiet origin main || return 1
+            git merge-base --is-ancestor "$catalog_commit" FETCH_HEAD
+          }
 
           rollback_release() {
             local status=$1 name
@@ -443,12 +481,28 @@ jobs:
             else
               gh release delete "$RELEASE_TAG" --yes
             fi
+            if test "$tag_mutated" = 1; then
+              if test -n "$remote_tag_commit"; then
+                git push --force origin "$remote_tag_commit:$tag_ref" || true
+              else
+                git push origin ":$tag_ref" || true
+              fi
+            fi
             exit "$status"
           }
 
-          if test "$release_write" = 1; then
+          if test "$changed" = 1 || test "$release_write" = 1; then
             trap 'rollback_release $?' ERR
             trap 'rollback_release 130' INT TERM
+          fi
+          if test "$changed" = 1 && test "$formal_existed" = 0; then
+            if push_release_tag "$catalog_commit"; then
+              tag_mutated=1
+            else
+              fail "could not create the release tag at the catalog commit"
+            fi
+          fi
+          if test "$release_write" = 1; then
             if test "$formal_existed" = 1; then
               if test "$formal_matches" = 0; then
                 while IFS= read -r name; do
@@ -463,7 +517,7 @@ jobs:
               else
                 title="Candy Core $RELEASE_VERSION"
               fi
-              gh release create "$RELEASE_TAG" --draft --title "$title" \
+              gh release create "$RELEASE_TAG" --verify-tag --draft --title "$title" \
                 --notes "Validated by the centralized Candy release workflow."
               gh release upload "$RELEASE_TAG" incoming/*
             fi
@@ -475,8 +529,16 @@ jobs:
             gh release edit "$RELEASE_TAG" --draft=false
           fi
 
+          if test "$changed" = 1 && test "$formal_existed" = 1 && test "$remote_tag_commit" != "$catalog_commit"; then
+            if push_release_tag "$catalog_commit" 1; then
+              tag_mutated=1
+            else
+              fail "could not update the release tag to the catalog commit"
+            fi
+          fi
+
           if test "$changed" = 1; then
-            git push origin HEAD:main
+            push_catalog_commit || fail "catalog push was not confirmed on origin/main"
           fi
           trap - ERR INT TERM
           gh release delete "$STAGING_TAG" --yes || true

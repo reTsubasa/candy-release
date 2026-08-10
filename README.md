@@ -122,9 +122,12 @@ on the Core page.
    signed catalog entry and the existing formal Release. An identical replay
    exits before touching the formal Release.
 6. For an accepted latest replacement, the Action prepares the signed catalog
-   and local Git commit, backs up the formal assets, replaces and remotely
-   verifies the exact asset set, then pushes the catalog commit. A failed
-   upload, verification or Git push restores the previous formal assets.
+   and local Git commit, backs up the formal assets, and stages the formal tag
+   on that catalog commit before creating a new Release. Existing Releases
+   update their tag only after the replacement assets have been verified. The
+   Action then remotely verifies the exact asset set and pushes the catalog
+   commit. A failed upload, verification, tag update or Git push restores the
+   previous formal assets and tag (or deletes the new tag).
 7. After the signed catalog is committed, the incoming draft is deleted.
 
 A different hash for an existing non-latest version is rejected before the

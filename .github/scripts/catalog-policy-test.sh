@@ -73,4 +73,34 @@ assert_output replace-latest core v0_3_4 0.3.4
 printf '%s\n' '{"version":"0.3.5","sha256":"new"}' > "$temporary/entry.json"
 assert_output new core v0_3_5 0.3.5
 
+workflow=$root/.github/workflows/finalize-release.yml
+assert_workflow_contains() {
+	grep -F "$1" "$workflow" >/dev/null || {
+		printf 'workflow is missing required transaction guard: %s\n' "$1" >&2
+		exit 1
+	}
+}
+assert_workflow_before() {
+	first=$(grep -nF "$1" "$workflow" | head -1 | cut -d: -f1 || true)
+	second=$(grep -nF "$2" "$workflow" | head -1 | cut -d: -f1 || true)
+	[ -n "$first" ] && [ -n "$second" ] && [ "$first" -lt "$second" ] || {
+		printf 'workflow transaction order is invalid: %s must precede %s\n' "$1" "$2" >&2
+		exit 1
+	}
+}
+assert_workflow_contains 'catalog_commit=$(git rev-parse HEAD)'
+assert_workflow_contains 'tag_ref="refs/tags/$RELEASE_TAG"'
+assert_workflow_contains 'push_release_tag()'
+assert_workflow_contains 'push_catalog_commit()'
+assert_workflow_contains 'observed=$(remote_ref_commit refs/heads/main)'
+assert_workflow_contains 'test "$observed" = "$catalog_commit"'
+assert_workflow_contains 'gh release create "$RELEASE_TAG" --verify-tag'
+assert_workflow_contains 'git push --force origin "$commit:$tag_ref"'
+assert_workflow_contains 'git push --force origin "$remote_tag_commit:$tag_ref"'
+assert_workflow_contains 'git push origin ":$tag_ref"'
+assert_workflow_contains 'tag exists without a formal Release; refusing to reuse it'
+assert_workflow_before 'push_release_tag "$catalog_commit"' 'gh release create "$RELEASE_TAG" --verify-tag'
+assert_workflow_before 'gh release edit "$RELEASE_TAG" --draft=false' 'push_release_tag "$catalog_commit" 1'
+assert_workflow_before 'push_release_tag "$catalog_commit" 1' 'push_catalog_commit || fail'
+
 printf '%s\n' 'catalog policy tests passed'
