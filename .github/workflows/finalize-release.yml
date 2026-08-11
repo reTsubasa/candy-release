@@ -48,8 +48,8 @@ jobs:
       - name: Test Runtime ruleset verification policy
         run: .github/scripts/runtime-rulesets-verifier-test.sh
 
-      - name: Test Core Cloud module verification policy
-        run: .github/scripts/verify-core-cloud-module-test.sh
+      - name: Test Core Cloud ABI verification policy
+        run: .github/scripts/verify-core-cloud-abi-test.sh
 
       - name: Build pinned catalog verifier
         shell: bash
@@ -276,33 +276,34 @@ jobs:
             ' "$metadata" >/dev/null || fail "invalid Core release metadata"
 
             unified_core=0
-            cloud_metadata=incoming/core-cloud-module-release-metadata.json
+            cloud_metadata=incoming/core-cloud-abi-release-metadata.json
             if test -f "$cloud_metadata" && test ! -L "$cloud_metadata"; then
               unified_core=1
               require_file "$cloud_metadata" 1048576
               jq -e --arg tag "$release_tag" --arg version "$version" '
                 .schema_version == 2 and
-                .release_kind == "candy-core-cloud-module" and
+                .release_kind == "candy-core" and
                 .release_tag == $tag and
                 .source.repository == "reTsubasa/candy-core" and
                 (.source.commit | type == "string" and test("^[0-9a-f]{40,64}$")) and
                 .module.version == $version and .module.abi_version == 1 and
                 .module.wire_protocol == "0.3" and
                 .module.build_request_schema == "candy-core-cloud-build-v1" and
-                ([.targets[].rust_target] | sort) == ["x86_64-unknown-linux-gnu"] and
-                .targets[0].os == "linux" and .targets[0].architecture == "x86_64" and
-                .targets[0].libc == "glibc" and .targets[0].artifact_kind == "shared-module" and
+                .target.role == "cloud-abi" and
+                .target.rust_target == "x86_64-unknown-linux-gnu" and
+                .target.os == "linux" and .target.architecture == "x86_64" and
+                .target.libc == "glibc" and
                 (.artifacts | length) == 3 and
-                ([.artifacts[].component] | sort) == ["bundle-checksum","cloud-module-bundle","cloud-module-manifest"] and
+                ([.artifacts[].component] | sort) == ["bundle-checksum","cloud-abi-bundle","cloud-abi-manifest"] and
                 .signature.format == "usign" and .signature.embedded_path == "manifest.sig" and
                 .signature.verified == true
               ' "$cloud_metadata" >/dev/null || fail "invalid Core Cloud ABI role metadata"
             else
               jq -e --arg key "$key" '
                 .core.releases[$key] != null and
-                (.core.releases[$key].artifact_roles? == null)
+                (.core.releases[$key].abi_profiles? == null)
               ' channels/stable.json >/dev/null ||
-                fail "new Core releases require both data-plane and cloud-abi artifact roles"
+                fail "new Core releases require the Cloud ABI profile"
             fi
 
             base="candy-core-$version-x86_64-unknown-linux-musl"
@@ -312,7 +313,7 @@ jobs:
             expected=$(jq -r '.artifacts[].name' "$metadata" | sort)
             expected=$(printf '%s\n' "$expected" core-release-metadata.json | sort)
             if test "$unified_core" = 1; then
-              expected=$(printf '%s\n' "$expected" "$(jq -r '.artifacts[].name' "$cloud_metadata")" core-cloud-module-release-metadata.json | sort)
+              expected=$(printf '%s\n' "$expected" "$(jq -r '.artifacts[].name' "$cloud_metadata")" core-cloud-abi-release-metadata.json | sort)
             fi
             actual=$(find incoming -maxdepth 1 -type f -printf '%f\n' | sort)
             test "$actual" = "$expected" || fail "unexpected Core release asset set"
@@ -357,17 +358,17 @@ jobs:
               '{linux_musl_x86_64:{target:"x86_64-unknown-linux-musl",os:"linux",libc:"musl",arch:"x86_64",url:$url,sha256:$sha,size:$size},linux_musl_armv7:{target:"armv7-unknown-linux-musleabihf",os:"linux",libc:"musl",arch:"arm",url:$arm_url,sha256:$arm_sha,size:$arm_size}}' > data-plane-targets.json
 
             if test "$unified_core" = 1; then
-              module_base="candy-core-cloud-module-$version-x86_64-unknown-linux-gnu"
+              module_base="candy-core-$version-cloud-abi-x86_64-unknown-linux-gnu"
               module_bundle="$module_base.tar.gz"
               module_checksum="$module_bundle.sha256"
               module_manifest="$module_base.manifest.json"
               require_file "incoming/$module_bundle" 134217728
               require_file "incoming/$module_checksum" 65536
               require_file "incoming/$module_manifest" 1048576
-              metadata_asset "$cloud_metadata" cloud-module-bundle "incoming/$module_bundle"
+              metadata_asset "$cloud_metadata" cloud-abi-bundle "incoming/$module_bundle"
               metadata_asset "$cloud_metadata" bundle-checksum "incoming/$module_checksum"
-              metadata_asset "$cloud_metadata" cloud-module-manifest "incoming/$module_manifest"
-              .github/scripts/verify-core-cloud-module.sh \
+              metadata_asset "$cloud_metadata" cloud-abi-manifest "incoming/$module_manifest"
+              .github/scripts/verify-core-cloud-abi.sh \
                 "$version" "x86_64-unknown-linux-gnu" "incoming/$module_bundle" \
                 "incoming/$module_checksum" "incoming/$module_manifest" keys/core-release.pub "$core_extract_root"
               module_abi=$(jq -er '.module.abi_version' "incoming/$module_manifest")
@@ -386,7 +387,7 @@ jobs:
                   .module.abi_version == $module_abi and
                   .module.wire_protocol == $wire_protocol and
                   .module.build_request_schema == $build_schema
-                ' "$cloud_metadata" >/dev/null || fail "Core artifact roles do not share one signed source contract"
+                ' "$cloud_metadata" >/dev/null || fail "Core data plane and Cloud ABI do not share one signed source contract"
               jq -n \
                 --arg version "$version" --arg commit "$(jq -r .source.commit "$metadata")" \
                 --argjson process_api "$(jq -r .core.process_api_version "$metadata")" \
@@ -399,11 +400,7 @@ jobs:
                 --arg module_sha "$(file_sha "incoming/$module_bundle")" --argjson module_size "$(file_size "incoming/$module_bundle")" '
                   {version:$version,commit:$commit,process_api_version:$process_api,core_api_version:$core_api,protocol_version:$protocol,
                    targets:$data_targets[0],
-                   artifact_roles:{
-                     data_plane:{kind:"executable-bundle",targets:$data_targets[0]},
-                     cloud_abi:{kind:"shared-module",module_abi_version:$module_abi,wire_protocol:$wire_protocol,build_request_schema:$build_schema,
-                       targets:{linux_glibc_x86_64:{artifact_kind:"shared-module",name:"libcandy_core_cloud.so",target:"x86_64-unknown-linux-gnu",os:"linux",libc:"glibc",arch:"x86_64",url:$module_url,sha256:$module_sha,size:$module_size}}}
-                   }}
+                   abi_profiles:{cloud_control_linux_glibc_x86_64:{artifact_kind:"shared-library",name:"libcandy_core_cloud.so",target:"x86_64-unknown-linux-gnu",os:"linux",libc:"glibc",arch:"x86_64",library:"libcandy_core_cloud.so",module_abi_version:$module_abi,wire_protocol:$wire_protocol,build_request_schema:$build_schema,url:$module_url,sha256:$module_sha,size:$module_size}}}
                 ' > entry.json
             else
               jq -n \
@@ -480,7 +477,7 @@ jobs:
           esac
 
           if test "$RELEASE_KIND" = core &&
-             jq -e '.artifact_roles.cloud_abi? != null' entry.json >/dev/null &&
+            jq -e '.abi_profiles? != null' entry.json >/dev/null &&
              test -n "$(jq -r '.core_modules.latest // empty' channels/stable.json)"; then
             changed=1
           fi

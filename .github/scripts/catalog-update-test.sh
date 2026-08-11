@@ -42,9 +42,8 @@ cat > "$temporary/entry.json" <<'EOF'
 {
   "version":"0.3.10",
   "targets":{"linux_musl_x86_64":{"url":"https://example.invalid/data-plane"}},
-  "artifact_roles": {
-    "data_plane":{"kind":"executable-bundle","targets":{}},
-    "cloud_abi":{"kind":"shared-module","targets":{"linux_glibc_x86_64":{"url":"https://example.invalid/canonical-module"}}}
+  "abi_profiles": {
+    "cloud_control_linux_glibc_x86_64":{"artifact_kind":"shared-library","url":"https://example.invalid/canonical-module"}
   }
 }
 EOF
@@ -52,7 +51,7 @@ EOF
 	2026-08-12T00:00:01Z "$temporary/unified-next.json"
 jq -e '
   .sequence == 30 and .core.latest == "v0_3_10" and
-  .core.releases.v0_3_10.artifact_roles.cloud_abi.kind == "shared-module" and
+  .core.releases.v0_3_10.abi_profiles.cloud_control_linux_glibc_x86_64.artifact_kind == "shared-library" and
   .core_modules.latest == null
 ' "$temporary/unified-next.json" >/dev/null
 [ "$(jq -cS .core_modules.releases "$temporary/unified-next.json")" = "$legacy_modules" ]
