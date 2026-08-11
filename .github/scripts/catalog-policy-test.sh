@@ -80,16 +80,7 @@ printf '%s\n' '{"version":"0.3.5","sha256":"new"}' > "$temporary/entry.json"
 assert_output new core v0_3_5 0.3.5
 
 printf '%s\n' '{"version":"0.3.10","release_assets":[{"name":"core-cloud-module-release-metadata.json","sha256":"latest","size":10}]}' > "$temporary/entry.json"
-assert_output unchanged core_modules v0_3_10 0.3.10
-
-printf '%s\n' '{"version":"0.3.10","release_assets":[{"name":"core-cloud-module-release-metadata.json","sha256":"changed","size":10}]}' > "$temporary/entry.json"
-assert_output replace-latest core_modules v0_3_10 0.3.10
-
-printf '%s\n' '{"version":"0.3.11","sha256":"new"}' > "$temporary/entry.json"
-assert_output new core_modules v0_3_11 0.3.11
-
-printf '%s\n' '{"version":"0.3.9","sha256":"old"}' > "$temporary/entry.json"
-assert_rejected core_modules v0_3_9 0.3.9
+assert_rejected core_modules v0_3_10 0.3.10
 
 workflow=$root/.github/workflows/finalize-release.yml
 assert_workflow_contains() {
@@ -97,6 +88,12 @@ assert_workflow_contains() {
 		printf 'workflow is missing required transaction guard: %s\n' "$1" >&2
 		exit 1
 	}
+}
+assert_workflow_absent() {
+	if grep -F "$1" "$workflow" >/dev/null; then
+		printf 'workflow still contains retired release path: %s\n' "$1" >&2
+		exit 1
+	fi
 }
 assert_workflow_before() {
 	first=$(grep -nF "$1" "$workflow" | head -1 | cut -d: -f1 || true)
@@ -127,8 +124,15 @@ assert_workflow_contains 'Core release metadata disagrees with signed manifests'
 assert_workflow_contains 'verify-core-cloud-module.sh'
 assert_workflow_contains 'core-cloud-module-release-metadata.json'
 assert_workflow_contains 'artifact_kind:"shared-module"'
-assert_workflow_contains 'echo "catalog_kind=core_modules"'
-assert_workflow_contains 'Core Cloud module metadata disagrees with signed manifest'
+assert_workflow_contains 'new Core releases require both data-plane and cloud-abi artifact roles'
+assert_workflow_contains 'Core artifact roles do not share one signed source contract'
+assert_workflow_contains 'data_plane:{kind:"executable-bundle"'
+assert_workflow_contains 'cloud_abi:{kind:"shared-module"'
+assert_workflow_contains '.github/scripts/catalog-update.sh channels/stable.json entry.json'
+assert_workflow_absent 'core-cloud-module:incoming-core-cloud-module'
+assert_workflow_absent '          - core-cloud-module'
+assert_workflow_absent 'echo "catalog_kind=core_modules"'
+assert_workflow_contains 'if test "$changed" = 0 && test "$release_write" = 0; then'
 assert_workflow_contains 'catalog_before_commit=$(git rev-parse HEAD)'
 assert_workflow_contains 'catalog_pushed=0'
 assert_workflow_contains 'rollback verification failed; manual reconciliation required'

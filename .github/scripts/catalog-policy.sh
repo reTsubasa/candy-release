@@ -36,7 +36,7 @@ release_key=$4
 release_version=$5
 
 case "$kind" in
-	runtime|core|core_modules) ;;
+	runtime|core) ;;
 	*) fail "unsupported release kind: $kind" ;;
 esac
 
