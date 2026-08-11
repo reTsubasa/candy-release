@@ -34,7 +34,7 @@ jobs:
       USIGN_COMMIT: c4c72b1b07945ee192361dc751291a7c98d6adcd
     steps:
       - name: Check out release control repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: main
           fetch-depth: 0
@@ -83,6 +83,45 @@ jobs:
             expected_size=$(jq -er --arg component "$component" --arg name "$name" '.artifacts[] | select(.component == $component and .name == $name) | .size_bytes' "$metadata")
             test "$(file_sha "$path")" = "$expected_sha" || fail "metadata SHA mismatch: $path"
             test "$(file_size "$path")" = "$expected_size" || fail "metadata size mismatch: $path"
+          }
+          verify_core_bundle() {
+            local version=$1 target=$2 bundle=$3 checksum=$4 manifest=$5
+            local checksum_sha checksum_name listing extract_dir inner_manifest inner_sig executable_sha
+            if ! awk 'NF { count += 1; if (NF != 2) invalid = 1 } END { exit (count == 1 && !invalid) ? 0 : 1 }' "$checksum"; then
+              fail "invalid Core checksum format: $checksum"
+            fi
+            checksum_sha=$(awk 'NR == 1 { print tolower($1) }' "$checksum")
+            checksum_name=$(awk 'NR == 1 { print $2 }' "$checksum")
+            printf '%s' "$checksum_sha" | grep -Eq '^[0-9a-f]{64}$' || fail "invalid Core checksum digest: $checksum"
+            test "$checksum_name" = "$(basename "$bundle")" || fail "Core checksum names the wrong bundle: $checksum"
+            test "$(file_sha "$bundle")" = "$checksum_sha" || fail "Core bundle checksum mismatch: $bundle"
+            listing=$(tar -tzf "$bundle") || fail "cannot list Core bundle: $bundle"
+            test "$listing" = $'candy-core\nmanifest.json\nmanifest.sig' || fail "invalid Core bundle contents: $bundle"
+            extract_dir="$core_extract_root/$target"
+            mkdir -p "$extract_dir"
+            tar -xzf "$bundle" -C "$extract_dir" || fail "cannot extract Core bundle: $bundle"
+            for artifact in candy-core manifest.json manifest.sig; do
+              test -f "$extract_dir/$artifact" && test ! -L "$extract_dir/$artifact" && test -s "$extract_dir/$artifact" ||
+                fail "invalid bundled Core artifact: $bundle/$artifact"
+            done
+            inner_manifest="$extract_dir/manifest.json"
+            inner_sig="$extract_dir/manifest.sig"
+            cmp "$manifest" "$inner_manifest" || fail "Core manifests differ: $manifest"
+            usign -V -p keys/core-release.pub -m "$inner_manifest" -x "$inner_sig" ||
+              fail "Core manifest signature is invalid: $bundle"
+            jq -e --arg version "$version" --arg target "$target" '
+              .schema_version == 1 and
+              .process_api_version == .core.process_api_version and
+              .process_api_version == 1 and .core.core_api_version == 1 and
+              .core.core_version == $version and
+              (.core.protocol_version | type == "object" and (.major | type == "number") and (.minor | type == "number")) and
+              .artifact.target == $target and .artifact.target_os == "linux" and
+              .artifact.libc == "musl" and .artifact.executable == "candy-core" and
+              (.artifact.executable_sha256 | test("^[0-9a-f]{64}$"))
+            ' "$manifest" >/dev/null || fail "Core manifest contract mismatch: $manifest"
+            executable_sha=$(jq -er '.artifact.executable_sha256' "$manifest")
+            test "$(file_sha "$extract_dir/candy-core")" = "$executable_sha" ||
+              fail "Core executable SHA-256 mismatch: $bundle"
           }
           build_value() { local file=incoming/BUILD-INFO; case "${2:-}" in '') ;; *) file=$2 ;; esac; sed -n "s/^$1=//p" "$file" | tail -1; }
 
@@ -232,15 +271,6 @@ jobs:
             metadata_asset "$metadata" core-bundle "incoming/$bundle"
             metadata_asset "$metadata" bundle-checksum "incoming/$checksum"
             metadata_asset "$metadata" core-manifest "incoming/$manifest"
-            test "$(wc -l < "incoming/$checksum" | tr -d ' ')" = 1 || fail "unexpected Core checksum count"
-            (cd incoming && sha256sum -c "$checksum")
-            listing=$(tar -tzf "incoming/$bundle")
-            test "$listing" = $'candy-core\nmanifest.json\nmanifest.sig' || fail "invalid Core bundle contents"
-            tar -xOzf "incoming/$bundle" manifest.json > manifest.inner.json
-            tar -xOzf "incoming/$bundle" manifest.sig > manifest.inner.sig
-            cmp "incoming/$manifest" manifest.inner.json || fail "Core manifests differ"
-            usign -V -p keys/core-release.pub -m manifest.inner.json -x manifest.inner.sig || fail "Core manifest signature is invalid"
-            jq -e --arg version "$version" '.schema_version == 1 and .process_api_version == 1 and .core.core_version == $version and .core.core_api_version == 1 and .artifact.target == "x86_64-unknown-linux-musl" and .artifact.libc == "musl"' "incoming/$manifest" >/dev/null || fail "Core manifest contract mismatch"
             arm_base="candy-core-$version-armv7-unknown-linux-musleabihf"
             arm_bundle="$arm_base.tar.gz"
             arm_checksum="$arm_bundle.sha256"
@@ -251,12 +281,22 @@ jobs:
             metadata_asset "$metadata" core-bundle "incoming/$arm_bundle"
             metadata_asset "$metadata" bundle-checksum "incoming/$arm_checksum"
             metadata_asset "$metadata" core-manifest "incoming/$arm_manifest"
-            (cd incoming && sha256sum -c "$arm_checksum")
-            tar -xOzf "incoming/$arm_bundle" manifest.json > arm-manifest.inner.json
-            tar -xOzf "incoming/$arm_bundle" manifest.sig > arm-manifest.inner.sig
-            cmp "incoming/$arm_manifest" arm-manifest.inner.json || fail "ARM Core manifests differ"
-            usign -V -p keys/core-release.pub -m arm-manifest.inner.json -x arm-manifest.inner.sig || fail "ARM Core manifest signature is invalid"
-            jq -e --arg version "$version" '.schema_version == 1 and .core.core_version == $version and .artifact.target == "armv7-unknown-linux-musleabihf" and .artifact.libc == "musl"' "incoming/$arm_manifest" >/dev/null || fail "ARM Core manifest contract mismatch"
+            core_extract_root=$(mktemp -d)
+            verify_core_bundle "$version" "x86_64-unknown-linux-musl" "incoming/$bundle" "incoming/$checksum" "incoming/$manifest"
+            verify_core_bundle "$version" "armv7-unknown-linux-musleabihf" "incoming/$arm_bundle" "incoming/$arm_checksum" "incoming/$arm_manifest"
+            process_api=$(jq -er '.process_api_version' "incoming/$manifest")
+            core_api=$(jq -er '.core.core_api_version' "incoming/$manifest")
+            protocol=$(jq -er '.core.protocol_version | "\(.major).\(.minor)"' "incoming/$manifest")
+            jq -e --arg version "$version" --argjson process_api "$process_api" --argjson core_api "$core_api" --arg protocol "$protocol" '
+              .core.core_version == $version and
+              .core.process_api_version == $process_api and
+              .core.core_api_version == $core_api and
+              .core.protocol_version == $protocol
+            ' "$metadata" >/dev/null || fail "Core release metadata disagrees with signed manifests"
+            jq -e --argjson process_api "$process_api" --argjson core_api "$core_api" --arg protocol "$protocol" '
+              .process_api_version == $process_api and .core.core_api_version == $core_api and
+              (.core.protocol_version | "\(.major).\(.minor)") == $protocol
+            ' "incoming/$arm_manifest" >/dev/null || fail "ARM Core manifest API/protocol differs from x86"
             key="v$(tr '.+-' '___' <<<"$version" | tr -d '\n')"
             jq -n \
               --arg version "$version" --arg commit "$(jq -r .source.commit "$metadata")" \
@@ -318,6 +358,7 @@ jobs:
           }
           test -n "$CATALOG_SIGNING_KEY" || fail "CANDY_CATALOG_SIGNING_KEY is not configured"
           git pull --ff-only origin main
+          catalog_before_commit=$(git rev-parse HEAD)
           mkdir -p channels
           if test -f channels/stable.json; then
             jq -e '.schema_version == 1 and .channel == "stable" and (.sequence | type == "number")' channels/stable.json >/dev/null || fail "existing stable catalog is invalid"
@@ -378,6 +419,7 @@ jobs:
             fail "tag exists without a formal Release; refusing to reuse it"
           fi
           tag_mutated=0
+          catalog_pushed=0
 
           if test "$decision" = unchanged && test "$release_write" = 0; then
             echo "Release and catalog entry already finalized"
@@ -465,28 +507,63 @@ jobs:
           }
 
           rollback_release() {
-            local status=$1 name
+            local status=$1 name rollback_failed=0 rollback_json rollback_tag rollback_catalog expected_catalog
             trap - ERR INT TERM
             set +e
             echo "finalize-release: restoring formal Release after failure" >&2
             if test "$formal_existed" = 1; then
               while IFS= read -r name; do
                 test -n "$name" || continue
-                test -f "published/$name" || gh release delete-asset "$RELEASE_TAG" "$name" --yes
+                if ! test -f "published/$name"; then
+                  gh release delete-asset "$RELEASE_TAG" "$name" --yes || rollback_failed=1
+                fi
               done < <(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' 2>/dev/null)
               if find published -maxdepth 1 -type f -print -quit | grep -q .; then
-                gh release upload "$RELEASE_TAG" published/* --clobber
+                gh release upload "$RELEASE_TAG" published/* --clobber || rollback_failed=1
               fi
-              gh release edit "$RELEASE_TAG" --draft="$formal_was_draft"
+              gh release edit "$RELEASE_TAG" --draft="$formal_was_draft" || rollback_failed=1
             else
-              gh release delete "$RELEASE_TAG" --yes
+              gh release delete "$RELEASE_TAG" --yes || rollback_failed=1
             fi
             if test "$tag_mutated" = 1; then
               if test -n "$remote_tag_commit"; then
-                git push --force origin "$remote_tag_commit:$tag_ref" || true
+                git push --force origin "$remote_tag_commit:$tag_ref" || rollback_failed=1
               else
-                git push origin ":$tag_ref" || true
+                git push origin ":$tag_ref" || rollback_failed=1
               fi
+            fi
+            if test "$formal_existed" = 1; then
+              rollback_json=$(gh release view "$RELEASE_TAG" --json isDraft,assets 2>/dev/null) || rollback_failed=1
+              if test -n "$rollback_json"; then
+                rollback_tag=$(jq -r .isDraft <<<"$rollback_json")
+                test "$rollback_tag" = "$formal_was_draft" || rollback_failed=1
+                rm -rf rollback-verified
+                mkdir -m 0700 rollback-verified
+                if test "$(jq '.assets | length' <<<"$rollback_json")" -gt 0; then
+                  gh release download "$RELEASE_TAG" --dir rollback-verified || rollback_failed=1
+                fi
+                asset_manifest rollback-verified rollback-assets.json
+                cmp -s rollback-assets.json published-assets.json || rollback_failed=1
+              fi
+            else
+              if gh release view "$RELEASE_TAG" --json tagName >/dev/null 2>&1; then
+                rollback_failed=1
+              fi
+            fi
+            rollback_tag=$(remote_ref_commit "$tag_ref^{}")
+            test -n "$rollback_tag" || rollback_tag=$(remote_ref_commit "$tag_ref")
+            if test -n "$remote_tag_commit"; then
+              test "$rollback_tag" = "$remote_tag_commit" || rollback_failed=1
+            else
+              test -z "$rollback_tag" || rollback_failed=1
+            fi
+            expected_catalog=$catalog_before_commit
+            test "$catalog_pushed" = 1 && expected_catalog=$catalog_commit
+            rollback_catalog=$(remote_ref_commit refs/heads/main)
+            test "$rollback_catalog" = "$expected_catalog" || rollback_failed=1
+            if test "$rollback_failed" = 1; then
+              echo "finalize-release: ERROR rollback verification failed; manual reconciliation required" >&2
+              exit 1
             fi
             exit "$status"
           }
@@ -538,7 +615,11 @@ jobs:
           fi
 
           if test "$changed" = 1; then
-            push_catalog_commit || fail "catalog push was not confirmed on origin/main"
+            if push_catalog_commit; then
+              catalog_pushed=1
+            else
+              fail "catalog push was not confirmed on origin/main"
+            fi
           fi
           trap - ERR INT TERM
           gh release delete "$STAGING_TAG" --yes || true
