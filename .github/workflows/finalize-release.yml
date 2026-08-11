@@ -12,6 +12,7 @@ on:
         options:
           - runtime
           - core
+          - core-cloud-module
       staging_tag:
         description: Existing incoming draft Release tag
         required: true
@@ -45,12 +46,15 @@ jobs:
       - name: Test Runtime ruleset verification policy
         run: .github/scripts/runtime-rulesets-verifier-test.sh
 
+      - name: Test Core Cloud module verification policy
+        run: .github/scripts/verify-core-cloud-module-test.sh
+
       - name: Build pinned catalog verifier
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y cmake gcc jq zstd
+          sudo apt-get install -y binutils cmake gcc jq zstd
           git init -q /tmp/usign
           git -C /tmp/usign remote add origin https://github.com/openwrt/usign.git
           timeout 60 git -C /tmp/usign fetch --depth 1 origin "$USIGN_COMMIT"
@@ -136,10 +140,10 @@ jobs:
           build_value() { local file=incoming/BUILD-INFO; case "${2:-}" in '') ;; *) file=$2 ;; esac; sed -n "s/^$1=//p" "$file" | tail -1; }
 
           case "$RELEASE_KIND:$STAGING_TAG" in
-            runtime:incoming-runtime-v[0-9]*|core:incoming-core-v[0-9]*) ;;
+            runtime:incoming-runtime-v[0-9]*|core:incoming-core-v[0-9]*|core-cloud-module:incoming-core-cloud-module-v[0-9]*) ;;
             *) fail "invalid release kind or tag" ;;
           esac
-          printf '%s' "$STAGING_TAG" | grep -Eq '^incoming-(runtime-v[0-9]+\.[0-9]+\.[0-9]+-r[1-9][0-9]*|core-v[0-9]+\.[0-9]+\.[0-9]+)$' || fail "invalid staging tag"
+          printf '%s' "$STAGING_TAG" | grep -Eq '^incoming-(runtime-v[0-9]+\.[0-9]+\.[0-9]+-r[1-9][0-9]*|core-v[0-9]+\.[0-9]+\.[0-9]+|core-cloud-module-v[0-9]+\.[0-9]+\.[0-9]+)$' || fail "invalid staging tag"
           release_json=$(gh release view "$STAGING_TAG" --json tagName,isDraft)
           test "$(jq -r .tagName <<<"$release_json")" = "$STAGING_TAG" || fail "staging Release tag mismatch"
           test "$(jq -r .isDraft <<<"$release_json")" = true || fail "incoming Release must remain a draft"
@@ -255,7 +259,7 @@ jobs:
               --arg arm_luci_sha "$(jq -r '.artifacts[] | select(.component == "luci") | .sha256' incoming/runtime-release-metadata-ipq40xx-generic-arm_cortex-a7_neon-vfpv4.json)" --argjson arm_luci_size "$(jq -r '.artifacts[] | select(.component == "luci") | .size_bytes' incoming/runtime-release-metadata-ipq40xx-generic-arm_cortex-a7_neon-vfpv4.json)" \
               '{version:$version,revision:$revision,display_version:$display,commit:$commit,targets:{openwrt_25_12_4_x86_64:{openwrt_release:"25.12.4",target:"x86/64",arch:"x86_64",package_format:"apk",candy_client:{url:$client_url,sha256:$client_sha,size:$client_size},luci_app_candy:{url:$luci_url,sha256:$luci_sha,size:$luci_size}},openwrt_25_12_4_arm_cortex_a7_neon_vfpv4:{openwrt_release:"25.12.4",target:"ipq40xx/generic",arch:"arm_cortex-a7_neon-vfpv4",package_format:"apk",candy_client:{url:$arm_client_url,sha256:$arm_client_sha,size:$arm_client_size},luci_app_candy:{url:$arm_luci_url,sha256:$arm_luci_sha,size:$arm_luci_size}}}}' > entry.json
             comparison_version=$display
-          else
+          elif test "$RELEASE_KIND" = core; then
             metadata=incoming/core-release-metadata.json
             require_file "$metadata" 1048576
             version=$(jq -er '.core.version' "$metadata")
@@ -319,6 +323,73 @@ jobs:
               --arg arm_sha "$(file_sha "incoming/$arm_bundle")" --argjson arm_size "$(file_size "incoming/$arm_bundle")" \
               '{version:$version,commit:$commit,process_api_version:$process_api,core_api_version:$core_api,protocol_version:$protocol,targets:{linux_musl_x86_64:{target:"x86_64-unknown-linux-musl",os:"linux",libc:"musl",arch:"x86_64",url:$url,sha256:$sha,size:$size},linux_musl_armv7:{target:"armv7-unknown-linux-musleabihf",os:"linux",libc:"musl",arch:"arm",url:$arm_url,sha256:$arm_sha,size:$arm_size}}}' > entry.json
             comparison_version=$version
+          else
+            metadata=incoming/core-cloud-module-release-metadata.json
+            require_file "$metadata" 1048576
+            version=$(jq -er '.module.version' "$metadata")
+            release_tag="core-cloud-module-v$version"
+            test "$STAGING_TAG" = "incoming-$release_tag" || fail "Core Cloud module staging tag mismatch"
+            jq -e --arg tag "$release_tag" '
+              .schema_version == 2 and
+              .release_kind == "candy-core-cloud-module" and
+              .release_tag == $tag and
+              .source.repository == "reTsubasa/candy-core" and
+              (.source.commit | type == "string" and test("^[0-9a-f]{40,64}$")) and
+              .module.abi_version == 1 and
+              .module.wire_protocol == "0.3" and
+              .module.build_request_schema == "candy-core-cloud-build-v1" and
+              ([.targets[].rust_target] | sort) == ["x86_64-unknown-linux-gnu"] and
+              .targets[0].os == "linux" and
+              .targets[0].architecture == "x86_64" and
+              .targets[0].libc == "glibc" and
+              .targets[0].artifact_kind == "shared-module" and
+              (.artifacts | length) == 3 and
+              ([.artifacts[].component] | sort) == ["bundle-checksum","cloud-module-bundle","cloud-module-manifest"] and
+              .signature.format == "usign" and .signature.embedded_path == "manifest.sig" and
+              .signature.verified == true
+            ' "$metadata" >/dev/null || fail "invalid Core Cloud module release metadata"
+            base="candy-core-cloud-module-$version-x86_64-unknown-linux-gnu"
+            bundle="$base.tar.gz"
+            checksum="$bundle.sha256"
+            manifest="$base.manifest.json"
+            expected=$(jq -r '.artifacts[].name' "$metadata" | sort)
+            expected=$(printf '%s\n' "$expected" core-cloud-module-release-metadata.json | sort)
+            actual=$(find incoming -maxdepth 1 -type f -printf '%f\n' | sort)
+            test "$actual" = "$expected" || fail "unexpected Core Cloud module release asset set"
+            require_file "incoming/$bundle" 134217728
+            require_file "incoming/$checksum" 65536
+            require_file "incoming/$manifest" 1048576
+            metadata_asset "$metadata" cloud-module-bundle "incoming/$bundle"
+            metadata_asset "$metadata" bundle-checksum "incoming/$checksum"
+            metadata_asset "$metadata" cloud-module-manifest "incoming/$manifest"
+            core_extract_root=$(mktemp -d)
+            .github/scripts/verify-core-cloud-module.sh \
+              "$version" "x86_64-unknown-linux-gnu" "incoming/$bundle" \
+              "incoming/$checksum" "incoming/$manifest" keys/core-release.pub "$core_extract_root"
+            module_abi=$(jq -er '.module.abi_version' "incoming/$manifest")
+            wire_protocol=$(jq -er '.module.wire_protocol' "incoming/$manifest")
+            build_schema=$(jq -er '.module.build_request_schema' "incoming/$manifest")
+            jq -e \
+              --arg version "$version" \
+              --argjson module_abi "$module_abi" \
+              --arg wire_protocol "$wire_protocol" \
+              --arg build_schema "$build_schema" \
+              --slurpfile manifest "incoming/$manifest" '
+                .source == $manifest[0].source and
+                .module.version == $version and
+                .module.abi_version == $module_abi and
+                .module.wire_protocol == $wire_protocol and
+                .module.build_request_schema == $build_schema
+              ' "$metadata" >/dev/null || fail "Core Cloud module metadata disagrees with signed manifest"
+            key="v$(tr '.+-' '___' <<<"$version" | tr -d '\n')"
+            jq -n \
+              --arg version "$version" --arg commit "$(jq -r .source.commit "$metadata")" \
+              --argjson module_abi "$module_abi" \
+              --arg wire_protocol "$wire_protocol" --arg build_schema "$build_schema" \
+              --arg url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/$bundle" \
+              --arg sha "$(file_sha "incoming/$bundle")" --argjson size "$(file_size "incoming/$bundle")" \
+              '{version:$version,commit:$commit,module_abi_version:$module_abi,wire_protocol:$wire_protocol,build_request_schema:$build_schema,targets:{linux_glibc_x86_64:{artifact_kind:"shared-module",name:"libcandy_core_cloud.so",target:"x86_64-unknown-linux-gnu",os:"linux",libc:"glibc",arch:"x86_64",url:$url,sha256:$sha,size:$size}}}' > entry.json
+            comparison_version=$version
           fi
 
           : > release-assets.ndjson
@@ -338,6 +409,11 @@ jobs:
             echo "key=$key"
             echo "version=$comparison_version"
             echo "tag=$release_tag"
+            if test "$RELEASE_KIND" = core-cloud-module; then
+              echo "catalog_kind=core_modules"
+            else
+              echo "catalog_kind=$RELEASE_KIND"
+            fi
           } >> "$GITHUB_OUTPUT"
 
       - name: Publish assets and signed stable catalog
@@ -347,6 +423,7 @@ jobs:
           RELEASE_KEY: ${{ steps.artifact.outputs.key }}
           RELEASE_VERSION: ${{ steps.artifact.outputs.version }}
           RELEASE_TAG: ${{ steps.artifact.outputs.tag }}
+          CATALOG_KIND: ${{ steps.artifact.outputs.catalog_kind }}
         run: |
           set -Eeuo pipefail
           fail() { echo "finalize-release: $*" >&2; return 1; }
@@ -373,18 +450,22 @@ jobs:
           if test -f channels/stable.json; then
             jq -e '.schema_version == 1 and .channel == "stable" and (.sequence | type == "number")' channels/stable.json >/dev/null || fail "existing stable catalog is invalid"
           else
-            jq -n '{schema_version:1,sequence:0,channel:"stable",published_at:null,runtime:{latest:null,releases:{}},core:{latest:null,releases:{}}}' > channels/stable.json
+            jq -n '{schema_version:1,sequence:0,channel:"stable",published_at:null,runtime:{latest:null,releases:{}},core:{latest:null,releases:{}},core_modules:{latest:null,releases:{}}}' > channels/stable.json
+          fi
+          if test "$CATALOG_KIND" = core_modules; then
+            jq '.core_modules //= {latest:null,releases:{}}' channels/stable.json > channels/stable.json.next
+            mv channels/stable.json.next channels/stable.json
           fi
 
           decision=$(.github/scripts/catalog-policy.sh \
-            channels/stable.json entry.json "$RELEASE_KIND" "$RELEASE_KEY" "$RELEASE_VERSION")
+            channels/stable.json entry.json "$CATALOG_KIND" "$RELEASE_KEY" "$RELEASE_VERSION")
           case "$decision" in
             new|replace-latest) changed=1 ;;
             unchanged) changed=0 ;;
             *) fail "unexpected catalog policy decision: $decision" ;;
           esac
 
-          latest_key=$(jq -r --arg kind "$RELEASE_KIND" '.[$kind].latest // empty' channels/stable.json)
+          latest_key=$(jq -r --arg kind "$CATALOG_KIND" '.[$kind].latest // empty' channels/stable.json)
           is_latest=0
           test "$latest_key" = "$RELEASE_KEY" && is_latest=1
           formal_existed=0
@@ -444,7 +525,7 @@ jobs:
 
           if test "$changed" = 1; then
             published_at=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-            jq --arg kind "$RELEASE_KIND" --arg key "$RELEASE_KEY" --arg published_at "$published_at" --slurpfile entry entry.json '
+            jq --arg kind "$CATALOG_KIND" --arg key "$RELEASE_KEY" --arg published_at "$published_at" --slurpfile entry entry.json '
               .sequence += 1 |
               .published_at = $published_at |
               .[$kind].releases[$key] = $entry[0] |
@@ -460,9 +541,10 @@ jobs:
 
             runtime_display=$(jq -r '.runtime.latest as $key | if $key then .runtime.releases[$key].display_version else "not published" end' channels/stable.json)
             core_display=$(jq -r '.core.latest as $key | if $key then .core.releases[$key].version else "not published" end' channels/stable.json)
+            core_module_display=$(jq -r '.core_modules.latest as $key | if $key then .core_modules.releases[$key].version else "not published" end' channels/stable.json)
             sequence=$(jq -r .sequence channels/stable.json)
             published_at=$(jq -r .published_at channels/stable.json)
-            python3 - "$runtime_display" "$core_display" "$sequence" "$published_at" <<'PY'
+            python3 - "$runtime_display" "$core_display" "$core_module_display" "$sequence" "$published_at" <<'PY'
           import pathlib
           import sys
 
@@ -476,8 +558,9 @@ jobs:
               "",
               f"- Runtime: `{sys.argv[1]}`",
               f"- Core: `{sys.argv[2]}`",
-              f"- Catalog sequence: `{sys.argv[3]}`",
-              f"- Published at: `{sys.argv[4]}`",
+              f"- Core Cloud module: `{sys.argv[3]}`",
+              f"- Catalog sequence: `{sys.argv[4]}`",
+              f"- Published at: `{sys.argv[5]}`",
               end,
           ])
           before, marker, remainder = text.partition(start)
@@ -615,6 +698,8 @@ jobs:
             else
               if test "$RELEASE_KIND" = runtime; then
                 title="Candy Runtime $RELEASE_VERSION"
+              elif test "$RELEASE_KIND" = core-cloud-module; then
+                title="Candy Core Cloud Module $RELEASE_VERSION"
               else
                 title="Candy Core $RELEASE_VERSION"
               fi

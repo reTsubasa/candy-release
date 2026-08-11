@@ -36,7 +36,7 @@ release_key=$4
 release_version=$5
 
 case "$kind" in
-	runtime|core) ;;
+	runtime|core|core_modules) ;;
 	*) fail "unsupported release kind: $kind" ;;
 esac
 
@@ -55,8 +55,8 @@ if [ "$current" = null ]; then
 			latest_version=$(jq -er --arg key "$latest_key" \
 				'.runtime.releases[$key].display_version' "$catalog")
 		else
-			latest_version=$(jq -er --arg key "$latest_key" \
-				'.core.releases[$key].version' "$catalog")
+			latest_version=$(jq -er --arg kind "$kind" --arg key "$latest_key" \
+				'.[$kind].releases[$key].version' "$catalog")
 		fi
 		version_gt "$release_version" "$latest_version" \
 			|| fail "release would move stable backward"
