@@ -29,16 +29,15 @@ https://raw.githubusercontent.com/reTsubasa/candy-release/main/channels/stable.j
 
 - Runtime: `0.4.0-r23`
 - Core: `0.3.9`
-- Core Cloud module: `0.3.10`
 - Catalog sequence: `29`
 - Published at: `2026-08-11T08:23:38Z`
 <!-- stable-status:end -->
 
 ## Release tags and asset names
 
-Runtime, executable Core, and Core Cloud module releases are independent
-artifact families. The module version identifies the Core source version that
-defines its ABI implementation.
+Runtime and Core are the two canonical product Release families. Each Core
+version has one `core-v<version>` Release containing all supported artifact
+roles from the same Core source commit.
 
 ```text
 runtime-v<runtime-version>-r<package-revision>
@@ -53,13 +52,23 @@ core-v<core-version>
   candy-core-<core-version>-<rust-target>.tar.gz.sha256
   candy-core-<core-version>-<rust-target>.manifest.json
   core-release-metadata.json
-
-core-cloud-module-v<core-version>
   candy-core-cloud-module-<core-version>-x86_64-unknown-linux-gnu.tar.gz
   candy-core-cloud-module-<core-version>-x86_64-unknown-linux-gnu.tar.gz.sha256
   candy-core-cloud-module-<core-version>-x86_64-unknown-linux-gnu.manifest.json
   core-cloud-module-release-metadata.json
 ```
+
+The already published `core-cloud-module-v0.3.10` Release remains available as
+a compatibility source for its original URLs and hashes. It is a legacy
+Release, is not a canonical product version, and no later Core Cloud ABI module
+may be published under that tag family.
+
+The `core-v0.3.10` migration draft therefore contains 11 assets: seven signed
+data-plane assets, the three existing signed Cloud ABI payload assets, and a
+new `core-cloud-module-release-metadata.json` whose `release_tag` is
+`core-v0.3.10`. The Cloud ABI bundle, checksum, and manifest can be reused
+byte-for-byte from the legacy Release; its old metadata cannot because it names
+the legacy tag.
 
 Runtime releases are produced by `candy-runtime` GitHub Actions. Core releases
 are built, stripped, signed, and uploaded locally from the private
@@ -82,11 +91,10 @@ APKs or Core bundle.
 
 ## Version and target model
 
-The release version lines are independent:
+The product version lines are independent:
 
 - Runtime uses SemVer plus an OpenWrt package revision, for example `0.4.0-r2`.
 - Core uses its own SemVer, for example `0.3.4`.
-- The Core Cloud module uses the Core source SemVer and its own release family.
 - The catalog uses a monotonically increasing integer `sequence`.
 
 Runtime target keys identify the exact OpenWrt release and package
@@ -95,21 +103,28 @@ the operating system, libc and CPU architecture, for example
 `linux_musl_x86_64`. Compatibility is explicit; clients do not select a
 nearest release or fall back across architectures.
 
-The Core Cloud module is a separate artifact family. Its initial target is
-`x86_64-unknown-linux-gnu`, represented in the catalog as
-`linux_glibc_x86_64`. It is a shared library named
-`libcandy_core_cloud.so`, not a `candy-core` executable. The signed manifest
-binds module ABI version 1, wire protocol `0.3`, build request schema
+Core currently has two artifact roles. `data_plane` contains the full
+`candy-core` executables for OpenWrt and server deployments. `cloud_abi`
+contains `libcandy_core_cloud.so` for a Cloud glibc process; it is a shared
+library and not a `candy-core` executable. Its signed manifest binds module ABI
+version 1, wire protocol `0.3`, build request schema
 `candy-core-cloud-build-v1`, target, libc, file size and SHA-256.
 
 ## Catalog contract
 
 `channels/stable.json` uses schema version 1 and a monotonically increasing
 `sequence`. Runtime releases are keyed as `v<version>_r<revision>` and Core
-and Core Cloud module releases as `v<version>`, with punctuation replaced by
-underscores. The three catalog families are `runtime`, `core`, and
-`core_modules`. Target keys are explicit so a client never guesses ABI
+releases as `v<version>`, with punctuation replaced by underscores. The
+canonical catalog families are `runtime` and `core`. New Core entries retain
+the top-level `targets` object consumed by existing OpenWrt clients and also
+publish explicit `artifact_roles.data_plane` and `artifact_roles.cloud_abi`
+contracts. Target keys are explicit so a consumer never guesses ABI
 compatibility.
+
+The `core_modules.releases.v0_3_10` catalog record is retained without changing
+its values for legacy compatibility. Finalizing the unified `core-v0.3.10`
+Release clears only `core_modules.latest`; it does not delete or replace that
+historical entry or the old GitHub Release.
 
 The OpenWrt client downloads `stable.json` and `stable.json.sig`, verifies them
 with `keys/catalog-release.pub`, rejects a sequence lower than the last accepted
@@ -153,11 +168,17 @@ on the Core page.
    previous formal assets and tag (or deletes the new tag).
 7. After the signed catalog is committed, the incoming draft is deleted.
 
-For a Cloud module, the dispatch `release_kind` is `core-cloud-module`, the
-incoming tag is `incoming-core-cloud-module-v<version>`, and
-`core-cloud-module-release-metadata.json` uses release kind
-`candy-core-cloud-module`. Its three artifact components are
-`cloud-module-bundle`, `bundle-checksum`, and `cloud-module-manifest`.
+For Core, the dispatch `release_kind` is always `core` and the incoming tag is
+always `incoming-core-v<version>`. A new Core version must include both
+`core-release-metadata.json` and `core-cloud-module-release-metadata.json` plus
+all assets named by them. The Cloud ABI metadata keeps release kind
+`candy-core-cloud-module`, but its `release_tag` is the canonical
+`core-v<version>`. Its three artifact components are `cloud-module-bundle`,
+`bundle-checksum`, and `cloud-module-manifest`.
+
+Executable-only drafts remain accepted solely to support an emergency exact
+replacement of a pre-migration Core catalog entry. They cannot introduce a new
+Core version.
 
 A different hash for an existing non-latest version is rejected before the
 final Release is touched. A different hash for the current latest version is
