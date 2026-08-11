@@ -29,9 +29,9 @@ https://raw.githubusercontent.com/reTsubasa/candy-release/main/channels/stable.j
 
 - Runtime: `0.4.0-r23`
 - Core: `0.3.9`
-- Core Cloud module: `not published`
-- Catalog sequence: `28`
-- Published at: `2026-08-11T03:13:33Z`
+- Core Cloud module: `0.3.10`
+- Catalog sequence: `29`
+- Published at: `2026-08-11T08:23:38Z`
 <!-- stable-status:end -->
 
 ## Release tags and asset names

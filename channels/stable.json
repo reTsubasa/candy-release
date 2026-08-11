@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "sequence": 28,
+  "sequence": 29,
   "channel": "stable",
-  "published_at": "2026-08-11T03:13:33Z",
+  "published_at": "2026-08-11T08:23:38Z",
   "runtime": {
     "latest": "v0_4_0_r23",
     "releases": {
@@ -1474,6 +1474,53 @@
             "name": "core-release-metadata.json",
             "sha256": "6e3aac225217a8715cf60767c08a5b11b5dbd1883d85122f891aef7599abb326",
             "size": 4347
+          }
+        ]
+      }
+    }
+  },
+  "core_modules": {
+    "latest": "v0_3_10",
+    "releases": {
+      "v0_3_10": {
+        "version": "0.3.10",
+        "commit": "37757a70a8b94d787b50fc612c276f80176ac355",
+        "module_abi_version": 1,
+        "wire_protocol": "0.3",
+        "build_request_schema": "candy-core-cloud-build-v1",
+        "targets": {
+          "linux_glibc_x86_64": {
+            "artifact_kind": "shared-module",
+            "name": "libcandy_core_cloud.so",
+            "target": "x86_64-unknown-linux-gnu",
+            "os": "linux",
+            "libc": "glibc",
+            "arch": "x86_64",
+            "url": "https://github.com/reTsubasa/candy-release/releases/download/core-cloud-module-v0.3.10/candy-core-cloud-module-0.3.10-x86_64-unknown-linux-gnu.tar.gz",
+            "sha256": "891fc81bbd258a364d138788660214a05d8819df0c896cd8a61d971bfed0564c",
+            "size": 480994
+          }
+        },
+        "release_assets": [
+          {
+            "name": "candy-core-cloud-module-0.3.10-x86_64-unknown-linux-gnu.manifest.json",
+            "sha256": "d74c28e2901e0e75fd9dd47574b0f085c870ba0ad12167fdaa142095dba33dec",
+            "size": 694
+          },
+          {
+            "name": "candy-core-cloud-module-0.3.10-x86_64-unknown-linux-gnu.tar.gz",
+            "sha256": "891fc81bbd258a364d138788660214a05d8819df0c896cd8a61d971bfed0564c",
+            "size": 480994
+          },
+          {
+            "name": "candy-core-cloud-module-0.3.10-x86_64-unknown-linux-gnu.tar.gz.sha256",
+            "sha256": "3899806318c8abe1fb1f1dbdf99172aa73cd1b8bc69b5536b34db4b92685452f",
+            "size": 129
+          },
+          {
+            "name": "core-cloud-module-release-metadata.json",
+            "sha256": "3481ec6045488eeac8c6e7942c56a21956d18b3b6a2015631de22780cc2684f4",
+            "size": 1490
           }
         ]
       }
