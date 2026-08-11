@@ -34,7 +34,7 @@ jq \
   .published_at = $published_at |
   .[$kind].releases[$key] = $entry[0] |
   .[$kind].latest = $key |
-  if $kind == "core" and ($entry[0].artifact_roles.cloud_abi? != null) then
+  if $kind == "core" and ($entry[0].abi_profiles? != null) then
     .core_modules = ((.core_modules // {latest:null,releases:{}}) | .latest = null)
   else
     .

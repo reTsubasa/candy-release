@@ -52,10 +52,10 @@ core-v<core-version>
   candy-core-<core-version>-<rust-target>.tar.gz.sha256
   candy-core-<core-version>-<rust-target>.manifest.json
   core-release-metadata.json
-  candy-core-cloud-module-<core-version>-x86_64-unknown-linux-gnu.tar.gz
-  candy-core-cloud-module-<core-version>-x86_64-unknown-linux-gnu.tar.gz.sha256
-  candy-core-cloud-module-<core-version>-x86_64-unknown-linux-gnu.manifest.json
-  core-cloud-module-release-metadata.json
+  candy-core-<core-version>-cloud-abi-x86_64-unknown-linux-gnu.tar.gz
+  candy-core-<core-version>-cloud-abi-x86_64-unknown-linux-gnu.tar.gz.sha256
+  candy-core-<core-version>-cloud-abi-x86_64-unknown-linux-gnu.manifest.json
+  core-cloud-abi-release-metadata.json
 ```
 
 The already published `core-cloud-module-v0.3.10` Release remains available as
@@ -63,12 +63,10 @@ a compatibility source for its original URLs and hashes. It is a legacy
 Release, is not a canonical product version, and no later Core Cloud ABI module
 may be published under that tag family.
 
-The `core-v0.3.10` migration draft therefore contains 11 assets: seven signed
-data-plane assets, the three existing signed Cloud ABI payload assets, and a
-new `core-cloud-module-release-metadata.json` whose `release_tag` is
-`core-v0.3.10`. The Cloud ABI bundle, checksum, and manifest can be reused
-byte-for-byte from the legacy Release; its old metadata cannot because it names
-the legacy tag.
+The `core-v0.3.10` migration draft therefore contains 11 assets: six signed
+data-plane assets, three signed Cloud ABI payload assets, and two metadata
+files. Both metadata files use `release_kind: candy-core`, the same
+`core-v0.3.10` tag, and the same source commit.
 
 Runtime releases are produced by `candy-runtime` GitHub Actions. Core releases
 are built, stripped, signed, and uploaded locally from the private
@@ -117,8 +115,8 @@ version 1, wire protocol `0.3`, build request schema
 releases as `v<version>`, with punctuation replaced by underscores. The
 canonical catalog families are `runtime` and `core`. New Core entries retain
 the top-level `targets` object consumed by existing OpenWrt clients and also
-publish explicit `artifact_roles.data_plane` and `artifact_roles.cloud_abi`
-contracts. Target keys are explicit so a consumer never guesses ABI
+publish the full data-plane `targets` plus explicit `abi_profiles` for the
+Cloud control ABI. Target keys are explicit so a consumer never guesses ABI
 compatibility.
 
 The `core_modules.releases.v0_3_10` catalog record is retained without changing
@@ -170,11 +168,10 @@ on the Core page.
 
 For Core, the dispatch `release_kind` is always `core` and the incoming tag is
 always `incoming-core-v<version>`. A new Core version must include both
-`core-release-metadata.json` and `core-cloud-module-release-metadata.json` plus
-all assets named by them. The Cloud ABI metadata keeps release kind
-`candy-core-cloud-module`, but its `release_tag` is the canonical
-`core-v<version>`. Its three artifact components are `cloud-module-bundle`,
-`bundle-checksum`, and `cloud-module-manifest`.
+`core-release-metadata.json` and `core-cloud-abi-release-metadata.json` plus
+all assets named by them. The Cloud ABI metadata uses the same `candy-core`
+release kind and canonical `core-v<version>` tag. Its three artifact components
+are `cloud-abi-bundle`, `bundle-checksum`, and `cloud-abi-manifest`.
 
 Executable-only drafts remain accepted solely to support an emergency exact
 replacement of a pre-migration Core catalog entry. They cannot introduce a new
