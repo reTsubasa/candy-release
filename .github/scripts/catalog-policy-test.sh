@@ -25,6 +25,12 @@ cat > "$temporary/catalog.json" <<'EOF'
       "v0_3_2": {"version":"0.3.2","release_assets":[{"name":"core-release-metadata.json","sha256":"historical","size":10}]},
       "v0_3_4": {"version":"0.3.4","release_assets":[{"name":"core-release-metadata.json","sha256":"latest","size":10}]}
     }
+  },
+  "core_modules": {
+    "latest": "v0_3_10",
+    "releases": {
+      "v0_3_10": {"version":"0.3.10","release_assets":[{"name":"core-cloud-module-release-metadata.json","sha256":"latest","size":10}]}
+    }
   }
 }
 EOF
@@ -73,6 +79,18 @@ assert_output replace-latest core v0_3_4 0.3.4
 printf '%s\n' '{"version":"0.3.5","sha256":"new"}' > "$temporary/entry.json"
 assert_output new core v0_3_5 0.3.5
 
+printf '%s\n' '{"version":"0.3.10","release_assets":[{"name":"core-cloud-module-release-metadata.json","sha256":"latest","size":10}]}' > "$temporary/entry.json"
+assert_output unchanged core_modules v0_3_10 0.3.10
+
+printf '%s\n' '{"version":"0.3.10","release_assets":[{"name":"core-cloud-module-release-metadata.json","sha256":"changed","size":10}]}' > "$temporary/entry.json"
+assert_output replace-latest core_modules v0_3_10 0.3.10
+
+printf '%s\n' '{"version":"0.3.11","sha256":"new"}' > "$temporary/entry.json"
+assert_output new core_modules v0_3_11 0.3.11
+
+printf '%s\n' '{"version":"0.3.9","sha256":"old"}' > "$temporary/entry.json"
+assert_rejected core_modules v0_3_9 0.3.9
+
 workflow=$root/.github/workflows/finalize-release.yml
 assert_workflow_contains() {
 	grep -F "$1" "$workflow" >/dev/null || {
@@ -106,6 +124,11 @@ assert_workflow_contains 'test -x "$extract_dir/candy-core"'
 assert_workflow_contains '($protocol.major | floor) == $protocol.major'
 assert_workflow_contains '.artifact.target_arch == $arch'
 assert_workflow_contains 'Core release metadata disagrees with signed manifests'
+assert_workflow_contains 'verify-core-cloud-module.sh'
+assert_workflow_contains 'core-cloud-module-release-metadata.json'
+assert_workflow_contains 'artifact_kind:"shared-module"'
+assert_workflow_contains 'echo "catalog_kind=core_modules"'
+assert_workflow_contains 'Core Cloud module metadata disagrees with signed manifest'
 assert_workflow_contains 'catalog_before_commit=$(git rev-parse HEAD)'
 assert_workflow_contains 'catalog_pushed=0'
 assert_workflow_contains 'rollback verification failed; manual reconciliation required'
