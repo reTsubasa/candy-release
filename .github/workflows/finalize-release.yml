@@ -86,7 +86,12 @@ jobs:
           }
           verify_core_bundle() {
             local version=$1 target=$2 bundle=$3 checksum=$4 manifest=$5
-            local checksum_sha checksum_name listing extract_dir inner_manifest inner_sig executable_sha
+            local checksum_sha checksum_name listing extract_dir inner_manifest inner_sig executable_sha expected_arch
+            case "$target" in
+              x86_64-unknown-linux-musl) expected_arch=x86_64 ;;
+              armv7-unknown-linux-musleabihf) expected_arch=armv7 ;;
+              *) fail "unsupported Core target: $target" ;;
+            esac
             if ! awk 'NF { count += 1; if (NF != 2) invalid = 1 } END { exit (count == 1 && !invalid) ? 0 : 1 }' "$checksum"; then
               fail "invalid Core checksum format: $checksum"
             fi
@@ -109,17 +114,22 @@ jobs:
             cmp "$manifest" "$inner_manifest" || fail "Core manifests differ: $manifest"
             usign -V -p keys/core-release.pub -m "$inner_manifest" -x "$inner_sig" ||
               fail "Core manifest signature is invalid: $bundle"
-            jq -e --arg version "$version" --arg target "$target" '
+            jq -e --arg version "$version" --arg target "$target" --arg arch "$expected_arch" '
               .schema_version == 1 and
               .process_api_version == .core.process_api_version and
               .process_api_version == 1 and .core.core_api_version == 1 and
               .core.core_version == $version and
-              (.core.protocol_version | type == "object" and (.major | type == "number") and (.minor | type == "number")) and
-              .artifact.target == $target and .artifact.target_os == "linux" and
+              (.core.protocol_version as $protocol |
+                ($protocol | type) == "object" and
+                ($protocol.major | type) == "number" and ($protocol.major | floor) == $protocol.major and $protocol.major >= 0 and
+                ($protocol.minor | type) == "number" and ($protocol.minor | floor) == $protocol.minor and $protocol.minor >= 0) and
+              .core.target_arch == $arch and .core.target_os == "linux" and
+              .artifact.target == $target and .artifact.target_os == "linux" and .artifact.target_arch == $arch and
               .artifact.libc == "musl" and .artifact.executable == "candy-core" and
               (.artifact.executable_sha256 | test("^[0-9a-f]{64}$"))
             ' "$manifest" >/dev/null || fail "Core manifest contract mismatch: $manifest"
             executable_sha=$(jq -er '.artifact.executable_sha256' "$manifest")
+            test -x "$extract_dir/candy-core" || fail "Core executable mode is invalid: $bundle"
             test "$(file_sha "$extract_dir/candy-core")" = "$executable_sha" ||
               fail "Core executable SHA-256 mismatch: $bundle"
           }
@@ -408,15 +418,20 @@ jobs:
           fi
 
           tag_ref="refs/tags/$RELEASE_TAG"
+          remote_tag_object=$(git ls-remote --tags origin "$tag_ref" | awk 'NR == 1 { print $1 }')
           remote_tag_commit=$(git ls-remote --tags origin "$tag_ref^{}" | awk 'NR == 1 { print $1 }')
           if test -z "$remote_tag_commit"; then
-            remote_tag_commit=$(git ls-remote --tags origin "$tag_ref" | awk 'NR == 1 { print $1 }')
+            remote_tag_commit=$remote_tag_object
           fi
           if test "$formal_existed" = 1 && test -z "$remote_tag_commit"; then
             fail "formal Release exists but its tag is missing"
           fi
           if test "$formal_existed" = 0 && test -n "$remote_tag_commit"; then
             fail "tag exists without a formal Release; refusing to reuse it"
+          fi
+          if test -n "$remote_tag_object"; then
+            git fetch --quiet --no-tags origin "$tag_ref"
+            git cat-file -e "$remote_tag_object^{object}" || fail "cannot retain the original release tag object"
           fi
           tag_mutated=0
           catalog_pushed=0
@@ -486,6 +501,14 @@ jobs:
             local ref=$1
             git ls-remote origin "$ref" | awk 'NR == 1 { print $1 }'
           }
+          release_is_absent() {
+            local response status
+            if response=$(gh api --include "repos/{owner}/{repo}/releases/tags/$RELEASE_TAG" 2>&1); then
+              return 1
+            fi
+            status=$(awk '$1 ~ /^HTTP\// { code=$2 } END { print code }' <<<"$response")
+            test "$status" = 404
+          }
           push_release_tag() {
             local commit=$1 force=${2:-0} observed
             if test "$force" = 1; then
@@ -507,7 +530,7 @@ jobs:
           }
 
           rollback_release() {
-            local status=$1 name rollback_failed=0 rollback_json rollback_tag rollback_catalog expected_catalog
+            local status=$1 name rollback_failed=0 rollback_json rollback_tag_object rollback_tag_commit rollback_catalog expected_catalog rollback_verify_dir
             trap - ERR INT TERM
             set +e
             echo "finalize-release: restoring formal Release after failure" >&2
@@ -523,11 +546,13 @@ jobs:
               fi
               gh release edit "$RELEASE_TAG" --draft="$formal_was_draft" || rollback_failed=1
             else
-              gh release delete "$RELEASE_TAG" --yes || rollback_failed=1
+              if ! release_is_absent; then
+                gh release delete "$RELEASE_TAG" --yes || rollback_failed=1
+              fi
             fi
             if test "$tag_mutated" = 1; then
-              if test -n "$remote_tag_commit"; then
-                git push --force origin "$remote_tag_commit:$tag_ref" || rollback_failed=1
+              if test -n "$remote_tag_object"; then
+                git push --force origin "$remote_tag_object:$tag_ref" || rollback_failed=1
               else
                 git push origin ":$tag_ref" || rollback_failed=1
               fi
@@ -537,25 +562,24 @@ jobs:
               if test -n "$rollback_json"; then
                 rollback_tag=$(jq -r .isDraft <<<"$rollback_json")
                 test "$rollback_tag" = "$formal_was_draft" || rollback_failed=1
-                rm -rf rollback-verified
-                mkdir -m 0700 rollback-verified
+                rollback_verify_dir=$(mktemp -d)
                 if test "$(jq '.assets | length' <<<"$rollback_json")" -gt 0; then
-                  gh release download "$RELEASE_TAG" --dir rollback-verified || rollback_failed=1
+                  gh release download "$RELEASE_TAG" --dir "$rollback_verify_dir" || rollback_failed=1
                 fi
-                asset_manifest rollback-verified rollback-assets.json
+                asset_manifest "$rollback_verify_dir" rollback-assets.json
                 cmp -s rollback-assets.json published-assets.json || rollback_failed=1
               fi
             else
-              if gh release view "$RELEASE_TAG" --json tagName >/dev/null 2>&1; then
-                rollback_failed=1
-              fi
+              release_is_absent || rollback_failed=1
             fi
-            rollback_tag=$(remote_ref_commit "$tag_ref^{}")
-            test -n "$rollback_tag" || rollback_tag=$(remote_ref_commit "$tag_ref")
-            if test -n "$remote_tag_commit"; then
-              test "$rollback_tag" = "$remote_tag_commit" || rollback_failed=1
+            rollback_tag_object=$(remote_ref_commit "$tag_ref")
+            rollback_tag_commit=$(remote_ref_commit "$tag_ref^{}")
+            test -n "$rollback_tag_commit" || rollback_tag_commit=$rollback_tag_object
+            if test -n "$remote_tag_object"; then
+              test "$rollback_tag_object" = "$remote_tag_object" || rollback_failed=1
+              test "$rollback_tag_commit" = "$remote_tag_commit" || rollback_failed=1
             else
-              test -z "$rollback_tag" || rollback_failed=1
+              test -z "$rollback_tag_object" || rollback_failed=1
             fi
             expected_catalog=$catalog_before_commit
             test "$catalog_pushed" = 1 && expected_catalog=$catalog_commit
