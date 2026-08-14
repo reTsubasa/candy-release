@@ -161,12 +161,12 @@ jobs:
             release_tag="runtime-v$display"
             test "$STAGING_TAG" = "incoming-$release_tag" || fail "Runtime staging tag mismatch"
             jq -e --arg tag "$release_tag" '
-              .schema_version == 2 and .release_kind == "candy-runtime-openwrt-client" and
+              .schema_version == 2 and .release_kind == "candy-runtime" and
               .release_tag == $tag and .source.repository == "reTsubasa/candy-runtime" and
               (.source.commit | test("^[0-9a-f]{40,64}$")) and
               (.targets | type == "array") and
-              ([.targets[].target_id] | sort) == ["ipq40xx-generic-arm_cortex-a7_neon-vfpv4","x86_64"] and
-              ([.artifacts[].component] | sort) == ["luci","luci","runtime-client","runtime-client"]
+              ([.targets[].target_id] | sort) == ["ipq40xx-generic-arm_cortex-a7_neon-vfpv4","linux-aarch64","linux-x86_64","x86_64"] and
+              ([.artifacts[].component] | sort) == ["luci","luci","runtime-client","runtime-client","runtime-install-manifest","runtime-install-manifest","runtime-server-bundle","runtime-server-bundle"]
             ' "$metadata" >/dev/null || fail "invalid Runtime release metadata"
             expected=$(jq -r '.artifacts[].name' "$metadata" | sort)
             expected=$(printf '%s\n' "$expected" BUILD-INFO-ipq40xx-generic-arm_cortex-a7_neon-vfpv4 BUILD-INFO-x86_64 SHA256SUMS SHA256SUMS-ipq40xx-generic-arm_cortex-a7_neon-vfpv4 SHA256SUMS-x86_64 runtime-release-metadata-ipq40xx-generic-arm_cortex-a7_neon-vfpv4.json runtime-release-metadata-x86_64.json runtime-release-metadata.json | sort)
@@ -247,6 +247,61 @@ jobs:
             test "$(usign -F -p "$core_release_key")" = d78de22abfca5b57 || fail "Runtime APK contains the wrong Core release public key"
             grep -Fq 'fail_open_locked()' "$client_init" || fail "Runtime APK has no fail-open path"
             grep -Fq '/var/lib/candy/service.lock' "$client_init" || fail "Runtime APK lifecycle lock is not persistent/root-owned"
+
+            for architecture in x86_64 aarch64; do
+              bundle="incoming/candy-server-runtime-$architecture.tar.gz"
+              install_manifest="incoming/linux-$architecture.json"
+              require_file "$bundle" 268435456
+              require_file "$install_manifest" 65536
+              metadata_asset "$metadata" runtime-server-bundle "$bundle"
+              metadata_asset "$metadata" runtime-install-manifest "$install_manifest"
+              jq -e --arg architecture "$architecture" --arg display "$display" \
+                --arg url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/candy-server-runtime-$architecture.tar.gz" \
+                --arg sha "$(file_sha "$bundle")" --argjson size "$(file_size "$bundle")" '
+                  .schema_version == 1 and .platform == "linux" and
+                  .architecture == $architecture and .runtime_version == $display and
+                  .runtime_url == $url and .runtime_sha256 == $sha and .runtime_size == $size
+                ' "$install_manifest" >/dev/null || fail "invalid Linux Runtime installation manifest: $install_manifest"
+              listing=$(tar -tzf "$bundle") || fail "cannot list Linux Runtime bundle: $bundle"
+              test "$(printf '%s\n' "$listing" | wc -l | tr -d ' ')" -le 100 || fail "Linux Runtime bundle contains too many entries: $bundle"
+              if printf '%s\n' "$listing" | sed 's#^\./##' | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+                fail "Linux Runtime bundle contains an unsafe path: $bundle"
+              fi
+              linux_extract=$(mktemp -d)
+              tar -xzf "$bundle" -C "$linux_extract" --no-same-owner --no-same-permissions || fail "cannot extract Linux Runtime bundle: $bundle"
+              if find "$linux_extract" -type l | grep -q .; then
+                fail "Linux Runtime bundle contains a symbolic link: $bundle"
+              fi
+              for executable in \
+                usr/local/bin/candy-server \
+                usr/local/libexec/candy-sdwan-runtime \
+                usr/local/libexec/candy-sdwan-agent \
+                usr/local/libexec/candy-netd \
+                usr/local/libexec/candy-cloud-enroll; do
+                test -f "$linux_extract/$executable" && test ! -L "$linux_extract/$executable" && test -x "$linux_extract/$executable" ||
+                  fail "Linux Runtime bundle is missing executable $executable: $bundle"
+              done
+              for required in \
+                systemd/candy-netd.service systemd/candy-sdwan.service \
+                systemd/candy.sysusers systemd/candy.tmpfiles VERSION; do
+                test -f "$linux_extract/$required" && test ! -L "$linux_extract/$required" && test -s "$linux_extract/$required" ||
+                  fail "Linux Runtime bundle is missing $required: $bundle"
+              done
+              test "$(tr -d '\r\n' <"$linux_extract/VERSION")" = "$version" || fail "Linux Runtime bundle version mismatch: $bundle"
+              if find "$linux_extract" -type f \( -name candy-core -o -name 'libcandy_core*' \) | grep -q .; then
+                fail "Linux Runtime bundle contains a forbidden Core artifact: $bundle"
+              fi
+              for elf in candy-netd candy-sdwan-agent candy-cloud-enroll; do
+                machine=$(readelf -h "$linux_extract/usr/local/libexec/$elf" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')
+                case "$architecture:$machine" in
+                  x86_64:*X86-64*|aarch64:*AArch64*) ;;
+                  *) fail "$elf has the wrong ELF architecture for $architecture: $machine" ;;
+                esac
+              done
+              grep -Fq 'ExecStopPost=+/usr/local/libexec/candy-sdwan-runtime fail-open' "$linux_extract/systemd/candy-sdwan.service" ||
+                fail "Linux Runtime SD-WAN service has no fail-open lifecycle hook: $bundle"
+              rm -rf "$linux_extract"
+            done
             key="v$(tr '.+-' '___' <<<"$version" | tr -d '\n')_r$revision"
             jq -n \
               --arg version "$version" --argjson revision "$revision" --arg display "$display" \
@@ -259,7 +314,15 @@ jobs:
               --arg arm_client_sha "$(jq -r '.artifacts[] | select(.component == "runtime-client") | .sha256' incoming/runtime-release-metadata-ipq40xx-generic-arm_cortex-a7_neon-vfpv4.json)" --argjson arm_client_size "$(jq -r '.artifacts[] | select(.component == "runtime-client") | .size_bytes' incoming/runtime-release-metadata-ipq40xx-generic-arm_cortex-a7_neon-vfpv4.json)" \
               --arg arm_luci_url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/$(jq -r '.artifacts[] | select(.component == "luci") | .name' incoming/runtime-release-metadata-ipq40xx-generic-arm_cortex-a7_neon-vfpv4.json)" \
               --arg arm_luci_sha "$(jq -r '.artifacts[] | select(.component == "luci") | .sha256' incoming/runtime-release-metadata-ipq40xx-generic-arm_cortex-a7_neon-vfpv4.json)" --argjson arm_luci_size "$(jq -r '.artifacts[] | select(.component == "luci") | .size_bytes' incoming/runtime-release-metadata-ipq40xx-generic-arm_cortex-a7_neon-vfpv4.json)" \
-              '{version:$version,revision:$revision,display_version:$display,commit:$commit,targets:{openwrt_25_12_4_x86_64:{openwrt_release:"25.12.4",target:"x86/64",arch:"x86_64",package_format:"apk",candy_client:{url:$client_url,sha256:$client_sha,size:$client_size},luci_app_candy:{url:$luci_url,sha256:$luci_sha,size:$luci_size}},openwrt_25_12_4_arm_cortex_a7_neon_vfpv4:{openwrt_release:"25.12.4",target:"ipq40xx/generic",arch:"arm_cortex-a7_neon-vfpv4",package_format:"apk",candy_client:{url:$arm_client_url,sha256:$arm_client_sha,size:$arm_client_size},luci_app_candy:{url:$arm_luci_url,sha256:$arm_luci_sha,size:$arm_luci_size}}}}' > entry.json
+              --arg linux_x86_url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/candy-server-runtime-x86_64.tar.gz" \
+              --arg linux_x86_sha "$(file_sha incoming/candy-server-runtime-x86_64.tar.gz)" --argjson linux_x86_size "$(file_size incoming/candy-server-runtime-x86_64.tar.gz)" \
+              --arg linux_x86_manifest_url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/linux-x86_64.json" \
+              --arg linux_x86_manifest_sha "$(file_sha incoming/linux-x86_64.json)" --argjson linux_x86_manifest_size "$(file_size incoming/linux-x86_64.json)" \
+              --arg linux_arm_url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/candy-server-runtime-aarch64.tar.gz" \
+              --arg linux_arm_sha "$(file_sha incoming/candy-server-runtime-aarch64.tar.gz)" --argjson linux_arm_size "$(file_size incoming/candy-server-runtime-aarch64.tar.gz)" \
+              --arg linux_arm_manifest_url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/linux-aarch64.json" \
+              --arg linux_arm_manifest_sha "$(file_sha incoming/linux-aarch64.json)" --argjson linux_arm_manifest_size "$(file_size incoming/linux-aarch64.json)" \
+              '{version:$version,revision:$revision,display_version:$display,commit:$commit,targets:{openwrt_25_12_4_x86_64:{openwrt_release:"25.12.4",target:"x86/64",arch:"x86_64",package_format:"apk",candy_client:{url:$client_url,sha256:$client_sha,size:$client_size},luci_app_candy:{url:$luci_url,sha256:$luci_sha,size:$luci_size}},openwrt_25_12_4_arm_cortex_a7_neon_vfpv4:{openwrt_release:"25.12.4",target:"ipq40xx/generic",arch:"arm_cortex-a7_neon-vfpv4",package_format:"apk",candy_client:{url:$arm_client_url,sha256:$arm_client_sha,size:$arm_client_size},luci_app_candy:{url:$arm_luci_url,sha256:$arm_luci_sha,size:$arm_luci_size}},linux_x86_64:{os:"linux",arch:"x86_64",libc:"musl",package_format:"tar.gz",runtime:{url:$linux_x86_url,sha256:$linux_x86_sha,size:$linux_x86_size},install_manifest:{url:$linux_x86_manifest_url,sha256:$linux_x86_manifest_sha,size:$linux_x86_manifest_size}},linux_aarch64:{os:"linux",arch:"aarch64",libc:"glibc",package_format:"tar.gz",runtime:{url:$linux_arm_url,sha256:$linux_arm_sha,size:$linux_arm_size},install_manifest:{url:$linux_arm_manifest_url,sha256:$linux_arm_manifest_sha,size:$linux_arm_manifest_size}}}}' > entry.json
             comparison_version=$display
           elif test "$RELEASE_KIND" = core; then
             metadata=incoming/core-release-metadata.json
