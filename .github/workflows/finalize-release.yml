@@ -48,6 +48,9 @@ jobs:
       - name: Test Runtime ruleset verification policy
         run: .github/scripts/runtime-rulesets-verifier-test.sh
 
+      - name: Test Linux Runtime bundle verification policy
+        run: .github/scripts/verify-linux-runtime-bundle-test.sh
+
       - name: Test Core Cloud ABI verification policy
         run: .github/scripts/verify-core-cloud-abi-test.sh
 
@@ -262,45 +265,9 @@ jobs:
                   .architecture == $architecture and .runtime_version == $display and
                   .runtime_url == $url and .runtime_sha256 == $sha and .runtime_size == $size
                 ' "$install_manifest" >/dev/null || fail "invalid Linux Runtime installation manifest: $install_manifest"
-              listing=$(tar -tzf "$bundle") || fail "cannot list Linux Runtime bundle: $bundle"
-              test "$(printf '%s\n' "$listing" | wc -l | tr -d ' ')" -le 100 || fail "Linux Runtime bundle contains too many entries: $bundle"
-              if printf '%s\n' "$listing" | sed 's#^\./##' | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
-                fail "Linux Runtime bundle contains an unsafe path: $bundle"
-              fi
-              linux_extract=$(mktemp -d)
-              tar -xzf "$bundle" -C "$linux_extract" --no-same-owner --no-same-permissions || fail "cannot extract Linux Runtime bundle: $bundle"
-              if find "$linux_extract" -type l | grep -q .; then
-                fail "Linux Runtime bundle contains a symbolic link: $bundle"
-              fi
-              for executable in \
-                usr/local/bin/candy-server \
-                usr/local/libexec/candy-sdwan-runtime \
-                usr/local/libexec/candy-sdwan-agent \
-                usr/local/libexec/candy-netd \
-                usr/local/libexec/candy-cloud-enroll; do
-                test -f "$linux_extract/$executable" && test ! -L "$linux_extract/$executable" && test -x "$linux_extract/$executable" ||
-                  fail "Linux Runtime bundle is missing executable $executable: $bundle"
-              done
-              for required in \
-                systemd/candy-netd.service systemd/candy-sdwan.service \
-                systemd/candy.sysusers systemd/candy.tmpfiles VERSION; do
-                test -f "$linux_extract/$required" && test ! -L "$linux_extract/$required" && test -s "$linux_extract/$required" ||
-                  fail "Linux Runtime bundle is missing $required: $bundle"
-              done
-              test "$(tr -d '\r\n' <"$linux_extract/VERSION")" = "$version" || fail "Linux Runtime bundle version mismatch: $bundle"
-              if find "$linux_extract" -type f \( -name candy-core -o -name 'libcandy_core*' \) | grep -q .; then
-                fail "Linux Runtime bundle contains a forbidden Core artifact: $bundle"
-              fi
-              for elf in candy-netd candy-sdwan-agent candy-cloud-enroll; do
-                machine=$(readelf -h "$linux_extract/usr/local/libexec/$elf" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')
-                case "$architecture:$machine" in
-                  x86_64:*X86-64*|aarch64:*AArch64*) ;;
-                  *) fail "$elf has the wrong ELF architecture for $architecture: $machine" ;;
-                esac
-              done
-              grep -Fq 'ExecStopPost=+/usr/local/libexec/candy-sdwan-runtime fail-open' "$linux_extract/systemd/candy-sdwan.service" ||
-                fail "Linux Runtime SD-WAN service has no fail-open lifecycle hook: $bundle"
-              rm -rf "$linux_extract"
+              "$GITHUB_WORKSPACE/.github/scripts/verify-linux-runtime-bundle.sh" \
+                "$version" "$architecture" "$bundle" >/dev/null ||
+                fail "Linux Runtime bundle does not satisfy the integrated server contract: $bundle"
             done
             key="v$(tr '.+-' '___' <<<"$version" | tr -d '\n')_r$revision"
             jq -n \
