@@ -46,18 +46,18 @@ cat > "$temporary/bin/readelf" <<'EOF'
 set -eu
 case "$1" in
   -h)
-    cat <<'OUT'
+    cat <<OUT
   Class:                             ELF64
   Data:                              2's complement, little endian
   Type:                              DYN (Shared object file)
-  Machine:                           Advanced Micro Devices X86-64
+  Machine:                           ${FAKE_MACHINE:-Advanced Micro Devices X86-64}
 OUT
     ;;
   -d)
-    cat <<'OUT'
+    cat <<OUT
  0x0000000000000001 (NEEDED)             Shared library: [libgcc_s.so.1]
  0x0000000000000001 (NEEDED)             Shared library: [libc.so.6]
- 0x0000000000000001 (NEEDED)             Shared library: [ld-linux-x86-64.so.2]
+${FAKE_LOADER:+ 0x0000000000000001 (NEEDED)             Shared library: [$FAKE_LOADER]}
 OUT
     ;;
   --dyn-syms)
@@ -83,7 +83,8 @@ build_bundle() {
 }
 
 verify() {
-	PATH="$temporary/bin:$PATH" "$verifier" 0.3.10 x86_64-unknown-linux-gnu \
+	target=${1:-x86_64-unknown-linux-gnu}
+	PATH="$temporary/bin:$PATH" "$verifier" 0.3.10 "$target" \
 		"$temporary/module.tar.gz" "$temporary/module.tar.gz.sha256" \
 		"$temporary/module.manifest.json" "$temporary/core-release.pub" "$temporary/extract"
 }
@@ -98,7 +99,25 @@ expect_rejected() {
 }
 
 build_bundle
+FAKE_LOADER=ld-linux-x86-64.so.2
+export FAKE_LOADER
 verify >/dev/null
+
+cp "$temporary/stage/manifest.json" "$temporary/x86-manifest.json"
+jq '.artifact.target = "aarch64-unknown-linux-gnu" | .artifact.target_arch = "aarch64"' \
+	"$temporary/x86-manifest.json" > "$temporary/stage/manifest.json"
+cp "$temporary/stage/manifest.json" "$temporary/module.manifest.json"
+build_bundle
+unset FAKE_LOADER
+FAKE_MACHINE=AArch64
+export FAKE_MACHINE
+verify aarch64-unknown-linux-gnu >/dev/null
+unset FAKE_MACHINE
+FAKE_LOADER=ld-linux-x86-64.so.2
+export FAKE_LOADER
+cp "$temporary/x86-manifest.json" "$temporary/stage/manifest.json"
+cp "$temporary/stage/manifest.json" "$temporary/module.manifest.json"
+build_bundle
 
 printf '%s\n' extra > "$temporary/stage/extra"
 tar -czf "$temporary/module.tar.gz" -C "$temporary/stage" libcandy_core_cloud.so manifest.json manifest.sig extra

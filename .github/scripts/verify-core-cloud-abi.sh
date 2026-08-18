@@ -31,7 +31,16 @@ for command in jq sha256sum tar usign readelf; do
 done
 
 case "$target" in
-	x86_64-unknown-linux-gnu) expected_arch=x86_64 ;;
+  x86_64-unknown-linux-gnu)
+    expected_arch=x86_64
+    expected_machine='Advanced Micro Devices X86-64'
+    expected_needed=$(printf '%s\n' ld-linux-x86-64.so.2 libc.so.6 libgcc_s.so.1 | sort)
+    ;;
+  aarch64-unknown-linux-gnu)
+    expected_arch=aarch64
+    expected_machine='AArch64'
+    expected_needed=$(printf '%s\n' libc.so.6 libgcc_s.so.1 | sort)
+    ;;
 	*) fail "unsupported Cloud ABI target: $target" ;;
 esac
 
@@ -111,12 +120,11 @@ elf_header=$(readelf -h "$library") || fail "cannot inspect ELF header"
 printf '%s\n' "$elf_header" | grep -Fq 'Class:                             ELF64' || fail "shared module is not ELF64"
 printf '%s\n' "$elf_header" | grep -Fq "Data:                              2's complement, little endian" || fail "shared module byte order is invalid"
 printf '%s\n' "$elf_header" | grep -Fq 'Type:                              DYN (Shared object file)' || fail "artifact is not an ELF shared object"
-printf '%s\n' "$elf_header" | grep -Fq 'Machine:                           Advanced Micro Devices X86-64' || fail "shared module architecture mismatch"
+printf '%s\n' "$elf_header" | grep -Fq "Machine:                           $expected_machine" || fail "shared module architecture mismatch"
 
 dynamic=$(readelf -d "$library") || fail "cannot inspect ELF dynamic section"
 ! printf '%s\n' "$dynamic" | grep -Eq '\((RPATH|RUNPATH)\)' || fail "shared module must not contain RPATH or RUNPATH"
 needed=$(printf '%s\n' "$dynamic" | sed -n 's/.*Shared library: \[\([^]]*\)\].*/\1/p' | sort)
-expected_needed=$(printf '%s\n' ld-linux-x86-64.so.2 libc.so.6 libgcc_s.so.1 | sort)
 [ "$needed" = "$expected_needed" ] || fail "shared module dependency allowlist mismatch"
 
 exports=$(readelf --dyn-syms --wide "$library" |
