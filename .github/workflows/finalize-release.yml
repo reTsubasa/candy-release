@@ -95,10 +95,11 @@ jobs:
           }
           verify_core_bundle() {
             local version=$1 target=$2 bundle=$3 checksum=$4 manifest=$5
-            local checksum_sha checksum_name listing extract_dir inner_manifest inner_sig executable_sha expected_arch
+            local checksum_sha checksum_name listing extract_dir inner_manifest inner_sig executable_sha expected_arch expected_libc
             case "$target" in
-              x86_64-unknown-linux-musl) expected_arch=x86_64 ;;
-              armv7-unknown-linux-musleabihf) expected_arch=armv7 ;;
+              x86_64-unknown-linux-musl) expected_arch=x86_64; expected_libc=musl ;;
+              armv7-unknown-linux-musleabihf) expected_arch=armv7; expected_libc=musl ;;
+              aarch64-unknown-linux-gnu) expected_arch=aarch64; expected_libc=gnu ;;
               *) fail "unsupported Core target: $target" ;;
             esac
             if ! awk 'NF { count += 1; if (NF != 2) invalid = 1 } END { exit (count == 1 && !invalid) ? 0 : 1 }' "$checksum"; then
@@ -123,7 +124,7 @@ jobs:
             cmp "$manifest" "$inner_manifest" || fail "Core manifests differ: $manifest"
             usign -V -p keys/core-release.pub -m "$inner_manifest" -x "$inner_sig" ||
               fail "Core manifest signature is invalid: $bundle"
-            jq -e --arg version "$version" --arg target "$target" --arg arch "$expected_arch" '
+            jq -e --arg version "$version" --arg target "$target" --arg arch "$expected_arch" --arg libc "$expected_libc" '
               .schema_version == 1 and
               .process_api_version == .core.process_api_version and
               .process_api_version == 1 and .core.core_api_version == 1 and
@@ -134,7 +135,7 @@ jobs:
                 ($protocol.minor | type) == "number" and ($protocol.minor | floor) == $protocol.minor and $protocol.minor >= 0) and
               .core.target_arch == $arch and .core.target_os == "linux" and
               .artifact.target == $target and .artifact.target_os == "linux" and .artifact.target_arch == $arch and
-              .artifact.libc == "musl" and .artifact.executable == "candy-core" and
+              .artifact.libc == $libc and .artifact.executable == "candy-core" and
               (.artifact.executable_sha256 | test("^[0-9a-f]{64}$"))
             ' "$manifest" >/dev/null || fail "Core manifest contract mismatch: $manifest"
             executable_sha=$(jq -er '.artifact.executable_sha256' "$manifest")
@@ -301,8 +302,8 @@ jobs:
             jq -e --arg tag "$release_tag" '
               .schema_version == 2 and .release_kind == "candy-core" and .release_tag == $tag and
               .source.repository == "reTsubasa/candy-core" and (.source.commit | test("^[0-9a-f]{40,64}$")) and
-              ([.targets[].rust_target] | sort) == ["armv7-unknown-linux-musleabihf","x86_64-unknown-linux-musl"] and
-              (.artifacts | length) == 6 and .signature.format == "usign" and .signature.verified == true
+              ([.targets[].rust_target] | sort) == ["aarch64-unknown-linux-gnu","armv7-unknown-linux-musleabihf","x86_64-unknown-linux-musl"] and
+              (.artifacts | length) == 9 and .signature.format == "usign" and .signature.verified == true
             ' "$metadata" >/dev/null || fail "invalid Core release metadata"
 
             unified_core=0
@@ -319,12 +320,12 @@ jobs:
                 .module.version == $version and .module.abi_version == 1 and
                 .module.wire_protocol == "0.3" and
                 .module.build_request_schema == "candy-core-cloud-build-v1" and
-                .target.role == "cloud-abi" and
-                .target.rust_target == "x86_64-unknown-linux-gnu" and
-                .target.os == "linux" and .target.architecture == "x86_64" and
-                .target.libc == "glibc" and
-                (.artifacts | length) == 3 and
-                ([.artifacts[].component] | sort) == ["bundle-checksum","cloud-abi-bundle","cloud-abi-manifest"] and
+                (.targets | type == "array") and
+                ([.targets[].rust_target] | sort) == ["aarch64-unknown-linux-gnu","x86_64-unknown-linux-gnu"] and
+                ([.targets[].os] | unique) == ["linux"] and
+                ([.targets[].libc] | unique) == ["glibc"] and
+                (.artifacts | length) == 6 and
+                ([.artifacts[].component] | sort) == ["bundle-checksum","bundle-checksum","cloud-abi-bundle","cloud-abi-bundle","cloud-abi-manifest","cloud-abi-manifest"] and
                 .signature.format == "usign" and .signature.embedded_path == "manifest.sig" and
                 .signature.verified == true
               ' "$cloud_metadata" >/dev/null || fail "invalid Core Cloud ABI role metadata"
@@ -363,9 +364,20 @@ jobs:
             metadata_asset "$metadata" core-bundle "incoming/$arm_bundle"
             metadata_asset "$metadata" bundle-checksum "incoming/$arm_checksum"
             metadata_asset "$metadata" core-manifest "incoming/$arm_manifest"
+            linux_arm_base="candy-core-$version-aarch64-unknown-linux-gnu"
+            linux_arm_bundle="$linux_arm_base.tar.gz"
+            linux_arm_checksum="$linux_arm_bundle.sha256"
+            linux_arm_manifest="$linux_arm_base.manifest.json"
+            require_file "incoming/$linux_arm_bundle" 134217728
+            require_file "incoming/$linux_arm_checksum" 65536
+            require_file "incoming/$linux_arm_manifest" 1048576
+            metadata_asset "$metadata" core-bundle "incoming/$linux_arm_bundle"
+            metadata_asset "$metadata" bundle-checksum "incoming/$linux_arm_checksum"
+            metadata_asset "$metadata" core-manifest "incoming/$linux_arm_manifest"
             core_extract_root=$(mktemp -d)
             verify_core_bundle "$version" "x86_64-unknown-linux-musl" "incoming/$bundle" "incoming/$checksum" "incoming/$manifest"
             verify_core_bundle "$version" "armv7-unknown-linux-musleabihf" "incoming/$arm_bundle" "incoming/$arm_checksum" "incoming/$arm_manifest"
+            verify_core_bundle "$version" "aarch64-unknown-linux-gnu" "incoming/$linux_arm_bundle" "incoming/$linux_arm_checksum" "incoming/$linux_arm_manifest"
             process_api=$(jq -er '.process_api_version' "incoming/$manifest")
             core_api=$(jq -er '.core.core_api_version' "incoming/$manifest")
             protocol=$(jq -er '.core.protocol_version | "\(.major).\(.minor)"' "incoming/$manifest")
@@ -379,28 +391,44 @@ jobs:
               .process_api_version == $process_api and .core.core_api_version == $core_api and
               (.core.protocol_version | "\(.major).\(.minor)") == $protocol
             ' "incoming/$arm_manifest" >/dev/null || fail "ARM Core manifest API/protocol differs from x86"
+            jq -e --argjson process_api "$process_api" --argjson core_api "$core_api" --arg protocol "$protocol" '
+              .process_api_version == $process_api and .core.core_api_version == $core_api and
+              (.core.protocol_version | "\(.major).\(.minor)") == $protocol
+            ' "incoming/$linux_arm_manifest" >/dev/null || fail "ARM64 Core manifest API/protocol differs from x86"
 
             jq -n \
               --arg url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/$bundle" \
               --arg sha "$(file_sha "incoming/$bundle")" --argjson size "$(file_size "incoming/$bundle")" \
               --arg arm_url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/$arm_bundle" \
               --arg arm_sha "$(file_sha "incoming/$arm_bundle")" --argjson arm_size "$(file_size "incoming/$arm_bundle")" \
-              '{linux_musl_x86_64:{target:"x86_64-unknown-linux-musl",os:"linux",libc:"musl",arch:"x86_64",url:$url,sha256:$sha,size:$size},linux_musl_armv7:{target:"armv7-unknown-linux-musleabihf",os:"linux",libc:"musl",arch:"arm",url:$arm_url,sha256:$arm_sha,size:$arm_size}}' > data-plane-targets.json
+              --arg linux_arm_url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/$linux_arm_bundle" \
+              --arg linux_arm_sha "$(file_sha "incoming/$linux_arm_bundle")" --argjson linux_arm_size "$(file_size "incoming/$linux_arm_bundle")" \
+              '{linux_musl_x86_64:{target:"x86_64-unknown-linux-musl",os:"linux",libc:"musl",arch:"x86_64",url:$url,sha256:$sha,size:$size},linux_musl_armv7:{target:"armv7-unknown-linux-musleabihf",os:"linux",libc:"musl",arch:"arm",url:$arm_url,sha256:$arm_sha,size:$arm_size},linux_gnu_aarch64:{target:"aarch64-unknown-linux-gnu",os:"linux",libc:"gnu",arch:"aarch64",url:$linux_arm_url,sha256:$linux_arm_sha,size:$linux_arm_size}}' > data-plane-targets.json
 
             if test "$unified_core" = 1; then
               module_base="candy-core-$version-cloud-abi-x86_64-unknown-linux-gnu"
               module_bundle="$module_base.tar.gz"
               module_checksum="$module_bundle.sha256"
               module_manifest="$module_base.manifest.json"
-              require_file "incoming/$module_bundle" 134217728
-              require_file "incoming/$module_checksum" 65536
-              require_file "incoming/$module_manifest" 1048576
-              metadata_asset "$cloud_metadata" cloud-abi-bundle "incoming/$module_bundle"
-              metadata_asset "$cloud_metadata" bundle-checksum "incoming/$module_checksum"
-              metadata_asset "$cloud_metadata" cloud-abi-manifest "incoming/$module_manifest"
-              .github/scripts/verify-core-cloud-abi.sh \
-                "$version" "x86_64-unknown-linux-gnu" "incoming/$module_bundle" \
-                "incoming/$module_checksum" "incoming/$module_manifest" keys/core-release.pub "$core_extract_root"
+              arm_module_base="candy-core-$version-cloud-abi-aarch64-unknown-linux-gnu"
+              arm_module_bundle="$arm_module_base.tar.gz"
+              arm_module_checksum="$arm_module_bundle.sha256"
+              arm_module_manifest="$arm_module_base.manifest.json"
+              for module_target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+                case "$module_target" in
+                  x86_64-unknown-linux-gnu) module_target_bundle="$module_bundle"; module_target_checksum="$module_checksum"; module_target_manifest="$module_manifest" ;;
+                  aarch64-unknown-linux-gnu) module_target_bundle="$arm_module_bundle"; module_target_checksum="$arm_module_checksum"; module_target_manifest="$arm_module_manifest" ;;
+                esac
+                require_file "incoming/$module_target_bundle" 134217728
+                require_file "incoming/$module_target_checksum" 65536
+                require_file "incoming/$module_target_manifest" 1048576
+                metadata_asset "$cloud_metadata" cloud-abi-bundle "incoming/$module_target_bundle"
+                metadata_asset "$cloud_metadata" bundle-checksum "incoming/$module_target_checksum"
+                metadata_asset "$cloud_metadata" cloud-abi-manifest "incoming/$module_target_manifest"
+                .github/scripts/verify-core-cloud-abi.sh \
+                  "$version" "$module_target" "incoming/$module_target_bundle" \
+                  "incoming/$module_target_checksum" "incoming/$module_target_manifest" keys/core-release.pub "$core_extract_root"
+              done
               module_abi=$(jq -er '.module.abi_version' "incoming/$module_manifest")
               wire_protocol=$(jq -er '.module.wire_protocol' "incoming/$module_manifest")
               build_schema=$(jq -er '.module.build_request_schema' "incoming/$module_manifest")
@@ -410,13 +438,19 @@ jobs:
                 --arg wire_protocol "$wire_protocol" \
                 --arg build_schema "$build_schema" \
                 --slurpfile manifest "incoming/$module_manifest" \
+                --slurpfile arm_manifest "incoming/$arm_module_manifest" \
                 --slurpfile core_metadata "$metadata" '
                   .source == $manifest[0].source and
+                  .source == $arm_manifest[0].source and
                   .source == $core_metadata[0].source and
                   .module.version == $version and
                   .module.abi_version == $module_abi and
                   .module.wire_protocol == $wire_protocol and
-                  .module.build_request_schema == $build_schema
+                  .module.build_request_schema == $build_schema and
+                  $arm_manifest[0].module.version == $version and
+                  $arm_manifest[0].module.abi_version == $module_abi and
+                  $arm_manifest[0].module.wire_protocol == $wire_protocol and
+                  $arm_manifest[0].module.build_request_schema == $build_schema
                 ' "$cloud_metadata" >/dev/null || fail "Core data plane and Cloud ABI do not share one signed source contract"
               jq -n \
                 --arg version "$version" --arg commit "$(jq -r .source.commit "$metadata")" \
@@ -427,10 +461,12 @@ jobs:
                 --argjson module_abi "$module_abi" \
                 --arg wire_protocol "$wire_protocol" --arg build_schema "$build_schema" \
                 --arg module_url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/$module_bundle" \
-                --arg module_sha "$(file_sha "incoming/$module_bundle")" --argjson module_size "$(file_size "incoming/$module_bundle")" '
+                --arg module_sha "$(file_sha "incoming/$module_bundle")" --argjson module_size "$(file_size "incoming/$module_bundle")" \
+                --arg arm_module_url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/$arm_module_bundle" \
+                --arg arm_module_sha "$(file_sha "incoming/$arm_module_bundle")" --argjson arm_module_size "$(file_size "incoming/$arm_module_bundle")" '
                   {version:$version,commit:$commit,process_api_version:$process_api,core_api_version:$core_api,protocol_version:$protocol,
                    targets:$data_targets[0],
-                   abi_profiles:{cloud_control_linux_glibc_x86_64:{artifact_kind:"shared-library",name:"libcandy_core_cloud.so",target:"x86_64-unknown-linux-gnu",os:"linux",libc:"glibc",arch:"x86_64",library:"libcandy_core_cloud.so",module_abi_version:$module_abi,wire_protocol:$wire_protocol,build_request_schema:$build_schema,url:$module_url,sha256:$module_sha,size:$module_size}}}
+                   abi_profiles:{cloud_control_linux_glibc_x86_64:{artifact_kind:"shared-library",name:"libcandy_core_cloud.so",target:"x86_64-unknown-linux-gnu",os:"linux",libc:"glibc",arch:"x86_64",library:"libcandy_core_cloud.so",module_abi_version:$module_abi,wire_protocol:$wire_protocol,build_request_schema:$build_schema,url:$module_url,sha256:$module_sha,size:$module_size},cloud_control_linux_glibc_aarch64:{artifact_kind:"shared-library",name:"libcandy_core_cloud.so",target:"aarch64-unknown-linux-gnu",os:"linux",libc:"glibc",arch:"aarch64",library:"libcandy_core_cloud.so",module_abi_version:$module_abi,wire_protocol:$wire_protocol,build_request_schema:$build_schema,url:$arm_module_url,sha256:$arm_module_sha,size:$arm_module_size}}}
                 ' > entry.json
             else
               jq -n \
