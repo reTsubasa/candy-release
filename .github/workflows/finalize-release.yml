@@ -54,6 +54,9 @@ jobs:
       - name: Test Core Cloud ABI verification policy
         run: .github/scripts/verify-core-cloud-abi-test.sh
 
+      - name: Test Core release metadata verification policy
+        run: .github/scripts/verify-core-release-metadata-test.sh
+
       - name: Build pinned catalog verifier
         shell: bash
         run: |
@@ -382,12 +385,9 @@ jobs:
             process_api=$(jq -er '.process_api_version' "incoming/$manifest")
             core_api=$(jq -er '.core.core_api_version' "incoming/$manifest")
             protocol=$(jq -er '.core.protocol_version | "\(.major).\(.minor)"' "incoming/$manifest")
-            jq -e --arg version "$version" --argjson process_api "$process_api" --argjson core_api "$core_api" --arg protocol "$protocol" '
-              .core.core_version == $version and
-              .core.process_api_version == $process_api and
-              .core.core_api_version == $core_api and
-              .core.protocol_version == $protocol
-            ' "$metadata" >/dev/null || fail "Core release metadata disagrees with signed manifests"
+            .github/scripts/verify-core-release-metadata.sh \
+              "$version" "$metadata" "incoming/$manifest" ||
+              fail "Core release metadata disagrees with signed manifests"
             jq -e --argjson process_api "$process_api" --argjson core_api "$core_api" --arg protocol "$protocol" '
               .process_api_version == $process_api and .core.core_api_version == $core_api and
               (.core.protocol_version | "\(.major).\(.minor)") == $protocol
