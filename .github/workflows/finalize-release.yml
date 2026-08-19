@@ -58,11 +58,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo timeout --signal=TERM 300 apt-get \
-            -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
-          sudo timeout --signal=TERM 300 apt-get \
-            -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
-            install -y binutils cmake gcc jq zstd
+          for command in cmake gcc git jq zstd; do
+            command -v "$command" >/dev/null || { echo "missing Runner tool: $command" >&2; exit 1; }
+          done
           git init -q /tmp/usign
           git -C /tmp/usign remote add origin https://github.com/openwrt/usign.git
           timeout 60 git -C /tmp/usign fetch --depth 1 origin "$USIGN_COMMIT"
