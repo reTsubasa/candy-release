@@ -58,8 +58,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y binutils cmake gcc jq zstd
+          sudo timeout --signal=TERM 300 apt-get \
+            -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+          sudo timeout --signal=TERM 300 apt-get \
+            -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 \
+            install -y binutils cmake gcc jq zstd
           git init -q /tmp/usign
           git -C /tmp/usign remote add origin https://github.com/openwrt/usign.git
           timeout 60 git -C /tmp/usign fetch --depth 1 origin "$USIGN_COMMIT"
