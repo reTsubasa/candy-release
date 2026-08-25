@@ -103,7 +103,7 @@ jobs:
             case "$target" in
               x86_64-unknown-linux-musl) expected_arch=x86_64; expected_libc=musl ;;
               armv7-unknown-linux-musleabihf) expected_arch=armv7; expected_libc=musl ;;
-              aarch64-unknown-linux-gnu) expected_arch=aarch64; expected_libc=gnu ;;
+              aarch64-unknown-linux-musl) expected_arch=aarch64; expected_libc=musl ;;
               *) fail "unsupported Core target: $target" ;;
             esac
             if ! awk 'NF { count += 1; if (NF != 2) invalid = 1 } END { exit (count == 1 && !invalid) ? 0 : 1 }' "$checksum"; then
@@ -306,7 +306,7 @@ jobs:
             jq -e --arg tag "$release_tag" '
               .schema_version == 2 and .release_kind == "candy-core" and .release_tag == $tag and
               .source.repository == "reTsubasa/candy-core" and (.source.commit | test("^[0-9a-f]{40,64}$")) and
-              ([.targets[].rust_target] | sort) == ["aarch64-unknown-linux-gnu","armv7-unknown-linux-musleabihf","x86_64-unknown-linux-musl"] and
+              ([.targets[].rust_target] | sort) == ["aarch64-unknown-linux-musl","armv7-unknown-linux-musleabihf","x86_64-unknown-linux-musl"] and
               (.artifacts | length) == 9 and .signature.format == "usign" and .signature.verified == true
             ' "$metadata" >/dev/null || fail "invalid Core release metadata"
 
@@ -368,7 +368,7 @@ jobs:
             metadata_asset "$metadata" core-bundle "incoming/$arm_bundle"
             metadata_asset "$metadata" bundle-checksum "incoming/$arm_checksum"
             metadata_asset "$metadata" core-manifest "incoming/$arm_manifest"
-            linux_arm_base="candy-core-$version-aarch64-unknown-linux-gnu"
+            linux_arm_base="candy-core-$version-aarch64-unknown-linux-musl"
             linux_arm_bundle="$linux_arm_base.tar.gz"
             linux_arm_checksum="$linux_arm_bundle.sha256"
             linux_arm_manifest="$linux_arm_base.manifest.json"
@@ -381,7 +381,7 @@ jobs:
             core_extract_root=$(mktemp -d)
             verify_core_bundle "$version" "x86_64-unknown-linux-musl" "incoming/$bundle" "incoming/$checksum" "incoming/$manifest"
             verify_core_bundle "$version" "armv7-unknown-linux-musleabihf" "incoming/$arm_bundle" "incoming/$arm_checksum" "incoming/$arm_manifest"
-            verify_core_bundle "$version" "aarch64-unknown-linux-gnu" "incoming/$linux_arm_bundle" "incoming/$linux_arm_checksum" "incoming/$linux_arm_manifest"
+            verify_core_bundle "$version" "aarch64-unknown-linux-musl" "incoming/$linux_arm_bundle" "incoming/$linux_arm_checksum" "incoming/$linux_arm_manifest"
             process_api=$(jq -er '.process_api_version' "incoming/$manifest")
             core_api=$(jq -er '.core.core_api_version' "incoming/$manifest")
             protocol=$(jq -er '.core.protocol_version | "\(.major).\(.minor)"' "incoming/$manifest")
@@ -404,7 +404,7 @@ jobs:
               --arg arm_sha "$(file_sha "incoming/$arm_bundle")" --argjson arm_size "$(file_size "incoming/$arm_bundle")" \
               --arg linux_arm_url "https://github.com/reTsubasa/candy-release/releases/download/$release_tag/$linux_arm_bundle" \
               --arg linux_arm_sha "$(file_sha "incoming/$linux_arm_bundle")" --argjson linux_arm_size "$(file_size "incoming/$linux_arm_bundle")" \
-              '{linux_musl_x86_64:{target:"x86_64-unknown-linux-musl",os:"linux",libc:"musl",arch:"x86_64",url:$url,sha256:$sha,size:$size},linux_musl_armv7:{target:"armv7-unknown-linux-musleabihf",os:"linux",libc:"musl",arch:"arm",url:$arm_url,sha256:$arm_sha,size:$arm_size},linux_gnu_aarch64:{target:"aarch64-unknown-linux-gnu",os:"linux",libc:"gnu",arch:"aarch64",url:$linux_arm_url,sha256:$linux_arm_sha,size:$linux_arm_size}}' > data-plane-targets.json
+              '{linux_musl_x86_64:{target:"x86_64-unknown-linux-musl",os:"linux",libc:"musl",arch:"x86_64",url:$url,sha256:$sha,size:$size},linux_musl_armv7:{target:"armv7-unknown-linux-musleabihf",os:"linux",libc:"musl",arch:"arm",url:$arm_url,sha256:$arm_sha,size:$arm_size},linux_musl_aarch64:{target:"aarch64-unknown-linux-musl",os:"linux",libc:"musl",arch:"aarch64",url:$linux_arm_url,sha256:$linux_arm_sha,size:$linux_arm_size}}' > data-plane-targets.json
 
             if test "$unified_core" = 1; then
               module_base="candy-core-$version-cloud-abi-x86_64-unknown-linux-gnu"
