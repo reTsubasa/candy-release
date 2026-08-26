@@ -69,10 +69,13 @@ files. Both metadata files use `release_kind: candy-core`, the same
 `core-v0.3.10` tag, and the same source commit.
 
 Runtime releases are produced by `candy-runtime` GitHub Actions. Core releases
-are built, stripped, signed, and uploaded locally from the private
-`candy-core` repository. Both publishers upload only to an
-`incoming-<release-tag>` draft Release and
-then dispatch this repository's `finalize-release` Action. That Action validates
+are built and stripped locally in the private `candy-core` repository, then
+uploaded here as an unsigned, immutable
+`candidate-core-v<version>-<commit12>` draft. The protected
+`sign-core-candidate` Action validates and signs that candidate before creating
+the `incoming-core-v<version>` draft. Runtime publishers upload directly to an
+`incoming-<release-tag>` draft. Both paths then dispatch this repository's
+`finalize-release` Action. That Action validates
 the complete asset set, publishes the Release, updates this status block and
 signs the stable catalog. Uploading an asset never publishes it to clients by
 itself: clients only discover releases referenced by the signed stable catalog.
@@ -148,9 +151,13 @@ on the Core page.
 ## Publishing order
 
 1. Build and test in the owning repository.
-2. Upload the exact allowlisted assets to an `incoming-<release-tag>` draft
-   Release in this repository.
-3. Dispatch `candy-artifact-ready` with only `release_kind` and `staging_tag`.
+2. Runtime uploads the exact allowlisted assets to an
+   `incoming-<release-tag>` draft. Core uploads one complete unsigned candidate
+   to `candidate-core-v<version>-<commit12>` and dispatches
+   `candy-core-candidate-ready` with only `candidate_tag`.
+3. The protected Core signing Action validates all candidate hashes and sizes,
+   signs each manifest with `CANDY_CORE_SIGNING_KEY`, verifies the signatures,
+   creates `incoming-core-v<version>`, then dispatches `candy-artifact-ready`.
 4. The central Action downloads the draft, verifies the complete asset set,
    metadata, sizes and SHA-256 values. Core also requires its independent
    manifest signature.
@@ -182,11 +189,11 @@ final Release is touched. A different hash for the current latest version is
 accepted and recorded as a new catalog sequence.
 
 The catalog signing key is held only as the protected
-`CANDY_CATALOG_SIGNING_KEY` Actions secret. The Core manifest signing key is
-held either by the offline Core release machine or by the private
-`candy-core` repository's protected `core-release-signing` Environment. It must never
-be committed to Git, attached to a Release, printed to logs, or cached. The
-protected workflow signs only after an isolated job reproduces an unsigned
-candidate from the exact protected-main commit. At least the current and
+`CANDY_CATALOG_SIGNING_KEY` Actions secret. The independent Core manifest key
+is held only as the `candy-release` repository secret
+`CANDY_CORE_SIGNING_KEY`; `candy-core` receives neither private key. Private
+keys must never be committed to Git, attached to a Release, printed to logs,
+or cached. The protected workflow signs only after validating a complete
+unsigned candidate bound to its exact Core source commit. At least the current and
 previous published Runtime and Core assets should be retained for rollback.
 Any asset referenced by a signed catalog must not be deleted.

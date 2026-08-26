@@ -1,0 +1,86 @@
+name: sign-core-candidate
+
+on:
+  repository_dispatch:
+    types: [candy-core-candidate-ready]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: candy-core-candidate-signing
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    runs-on: ubuntu-24.04
+    env:
+      CANDIDATE_TAG: ${{ github.event.client_payload.candidate_tag }}
+      USIGN_COMMIT: c4c72b1b07945ee192361dc751291a7c98d6adcd
+    steps:
+      - name: Check out release control repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Test Core candidate signer
+        run: .github/scripts/sign-core-candidate-test.sh
+
+      - name: Build pinned usign
+        shell: bash
+        run: |
+          set -euo pipefail
+          for command in cmake gcc git jq zstd; do
+            command -v "$command" >/dev/null || { echo "missing Runner tool: $command" >&2; exit 1; }
+          done
+          git init -q /tmp/usign
+          git -C /tmp/usign remote add origin https://github.com/openwrt/usign.git
+          timeout 60 git -C /tmp/usign fetch --depth 1 origin "$USIGN_COMMIT"
+          git -C /tmp/usign checkout -q FETCH_HEAD
+          cmake -S /tmp/usign -B /tmp/usign/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/usign/build --parallel 2
+          sudo install -m 0755 /tmp/usign/build/usign /usr/local/bin/usign
+
+      - name: Download and sign unsigned candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDY_CORE_SIGNING_KEY: ${{ secrets.CANDY_CORE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          [[ -n "$CANDY_CORE_SIGNING_KEY" ]] || { echo "CANDY_CORE_SIGNING_KEY is not configured" >&2; exit 1; }
+          [[ "$CANDIDATE_TAG" =~ ^candidate-core-v[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{12}$ ]] || {
+            echo "invalid Core candidate tag" >&2
+            exit 1
+          }
+          release_json=$(gh release view "$CANDIDATE_TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft)
+          [[ "$(jq -r .tagName <<<"$release_json")" == "$CANDIDATE_TAG" ]] || { echo "candidate tag mismatch" >&2; exit 1; }
+          [[ "$(jq -r .isDraft <<<"$release_json")" == true ]] || { echo "Core candidate must remain a draft" >&2; exit 1; }
+          candidate="$RUNNER_TEMP/core-candidate"
+          incoming="$RUNNER_TEMP/core-incoming"
+          mkdir -m 0700 "$candidate"
+          gh release download "$CANDIDATE_TAG" --repo "$GITHUB_REPOSITORY" --dir "$candidate"
+          umask 077
+          secret="$RUNNER_TEMP/candy-core-release.sec"
+          printf '%s\n' "$CANDY_CORE_SIGNING_KEY" > "$secret"
+          trap 'rm -f "$secret"' EXIT HUP INT TERM
+          .github/scripts/sign-core-candidate.sh \
+            "$CANDIDATE_TAG" "$candidate" "$incoming" "$secret" keys/core-release.pub
+          version=$(jq -er .core.version "$candidate/core-candidate-metadata.json")
+          incoming_tag="incoming-core-v$version"
+          if gh release view "$incoming_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "incoming Core draft already exists; refusing to replace it" >&2
+            exit 1
+          fi
+          gh release create "$incoming_tag" --repo "$GITHUB_REPOSITORY" --draft \
+            --title "Incoming signed Candy Core $version" \
+            --notes "Signed by the protected candy-release Action from $CANDIDATE_TAG."
+          if ! gh release upload "$incoming_tag" --repo "$GITHUB_REPOSITORY" \
+            "$incoming"/*.json "$incoming"/*.tar.gz "$incoming"/*.sha256; then
+            gh release delete "$incoming_tag" --repo "$GITHUB_REPOSITORY" --yes >/dev/null 2>&1 || true
+            exit 1
+          fi
+          jq -n --arg tag "$incoming_tag" \
+            '{event_type:"candy-artifact-ready",client_payload:{release_kind:"core",staging_tag:$tag}}' |
+            gh api --method POST "repos/$GITHUB_REPOSITORY/dispatches" --input -
