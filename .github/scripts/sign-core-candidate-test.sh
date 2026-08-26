@@ -120,8 +120,11 @@ jq -n --arg commit "$commit" --arg version "$version" \
     artifacts:([$targets[].artifacts[]] + [$cloud[].artifacts[]]),unsigned:true
   }' > "$candidate/core-candidate-metadata.json"
 
-PATH="$temporary/bin:$PATH" "$signer" "candidate-core-v$version-${commit:0:12}" \
-  "$candidate" "$output" "$temporary/core-release.sec" "$temporary/core-release.pub" >/dev/null
+(
+  umask 077
+  PATH="$temporary/bin:$PATH" "$signer" "candidate-core-v$version-${commit:0:12}" \
+    "$candidate" "$output" "$temporary/core-release.sec" "$temporary/core-release.pub" >/dev/null
+)
 [[ "$(find "$output" -maxdepth 1 -type f | wc -l | tr -d ' ')" == 17 ]]
 jq -e --arg version "$version" --arg commit "$commit" '
   .schema_version == 2 and .release_tag == "core-v" + $version and
@@ -134,6 +137,15 @@ extract="$temporary/signed"
 mkdir "$extract"
 tar -xzf "$output/candy-core-$version-x86_64-unknown-linux-musl.tar.gz" -C "$extract"
 grep -Fq 'fixture-signature:' "$extract/manifest.sig"
+[[ "$(ls -l "$extract/candy-core" | cut -c1-10)" == -rwxr-xr-x ]]
+[[ "$(ls -l "$extract/manifest.json" | cut -c1-10)" == -rw-r--r-- ]]
+[[ "$(ls -l "$extract/manifest.sig" | cut -c1-10)" == -rw-r--r-- ]]
+cloud_extract="$temporary/signed-cloud"
+mkdir "$cloud_extract"
+tar -xzf "$output/candy-core-$version-cloud-abi-x86_64-unknown-linux-gnu.tar.gz" -C "$cloud_extract"
+[[ "$(ls -l "$cloud_extract/libcandy_core_cloud.so" | cut -c1-10)" == -r-xr-xr-x ]]
+[[ "$(ls -l "$cloud_extract/manifest.json" | cut -c1-10)" == -rw-r--r-- ]]
+[[ "$(ls -l "$cloud_extract/manifest.sig" | cut -c1-10)" == -rw-r--r-- ]]
 
 expect_rejected() {
   local label=$1

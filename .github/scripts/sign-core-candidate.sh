@@ -146,6 +146,8 @@ for target in x86_64-unknown-linux-musl armv7-unknown-linux-musleabihf aarch64-u
   [[ "$(file_sha "$extract/candy-core")" == "$(jq -er '.artifact.executable_sha256' "$manifest")" ]] ||
     fail "Core executable SHA mismatch: $target"
   sign_manifest "$extract/manifest.json" "$extract/manifest.sig"
+  chmod 0755 "$extract/candy-core"
+  chmod 0644 "$extract/manifest.json" "$extract/manifest.sig"
   output_bundle="$output_dir/$base.tar.gz"
   output_checksum="$output_dir/$base.tar.gz.sha256"
   cp "$manifest" "$output_dir/$base.manifest.json"
@@ -192,6 +194,8 @@ for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
   [[ "$(file_size "$extract/libcandy_core_cloud.so")" == "$(jq -er '.artifact.size_bytes' "$manifest")" ]] ||
     fail "Cloud ABI library size mismatch: $target"
   sign_manifest "$extract/manifest.json" "$extract/manifest.sig"
+  chmod 0555 "$extract/libcandy_core_cloud.so"
+  chmod 0644 "$extract/manifest.json" "$extract/manifest.sig"
   output_bundle="$output_dir/$base.tar.gz"
   output_checksum="$output_dir/$base.tar.gz.sha256"
   cp "$manifest" "$output_dir/$base.manifest.json"
