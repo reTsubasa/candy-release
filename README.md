@@ -27,10 +27,10 @@ https://raw.githubusercontent.com/reTsubasa/candy-release/main/channels/stable.j
 <!-- stable-status:start -->
 ## Current stable channel
 
-- Runtime: `0.4.0-r97`
+- Runtime: `0.4.0-r98`
 - Core: `0.3.35`
-- Catalog sequence: `135`
-- Published at: `2026-08-31T09:01:53Z`
+- Catalog sequence: `136`
+- Published at: `2026-08-31T09:53:52Z`
 <!-- stable-status:end -->
 
 ## Release tags and asset names
