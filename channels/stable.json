@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "sequence": 139,
+  "sequence": 140,
   "channel": "stable",
-  "published_at": "2026-09-01T08:56:37Z",
+  "published_at": "2026-09-01T09:27:26Z",
   "runtime": {
     "latest": "v0_4_0_r100",
     "releases": {
@@ -12424,7 +12424,7 @@
         "version": "0.4.0",
         "revision": 100,
         "display_version": "0.4.0-r100",
-        "commit": "49df7334fc5e7c11b67220148e27e7b6231eb680",
+        "commit": "59fcc558ae8c61de5a49d4dcd444cccd99b8c51c",
         "targets": {
           "openwrt_25_12_4_x86_64": {
             "openwrt_release": "25.12.4",
@@ -12433,8 +12433,8 @@
             "package_format": "apk",
             "candy_client": {
               "url": "https://github.com/reTsubasa/candy-release/releases/download/runtime-v0.4.0-r100/candy-client-0.4.0-r100-x86_64.apk",
-              "sha256": "f68d3e1cf3fe9e7ea28c1558fcc639f744ac0da9dae3a29196a9d746b499fefe",
-              "size": 6738458
+              "sha256": "ff393e47c81461c2cae77228486823cee5f5323812c99b7738f618724c001340",
+              "size": 6738455
             },
             "luci_app_candy": {
               "url": "https://github.com/reTsubasa/candy-release/releases/download/runtime-v0.4.0-r100/luci-app-candy-0.4.0-r100-x86_64.apk",
@@ -12449,8 +12449,8 @@
             "package_format": "apk",
             "candy_client": {
               "url": "https://github.com/reTsubasa/candy-release/releases/download/runtime-v0.4.0-r100/candy-client-0.4.0-r100-ipq40xx-generic-arm_cortex-a7_neon-vfpv4.apk",
-              "sha256": "b35dfa1e32178905d8ea6f86c1cbeee9b8eb6f07f3f80a6265af964bf1772b12",
-              "size": 5805234
+              "sha256": "3d52dc2b0f082e0b17475f7707e3babc46a2899a14421a1726c46c59bfc2287f",
+              "size": 5805229
             },
             "luci_app_candy": {
               "url": "https://github.com/reTsubasa/candy-release/releases/download/runtime-v0.4.0-r100/luci-app-candy-0.4.0-r100-ipq40xx-generic-arm_cortex-a7_neon-vfpv4.apk",
@@ -12465,12 +12465,12 @@
             "package_format": "tar.gz",
             "runtime": {
               "url": "https://github.com/reTsubasa/candy-release/releases/download/runtime-v0.4.0-r100/candy-server-runtime-x86_64.tar.gz",
-              "sha256": "80c23fb64bb2dd551eb12681aef3aaff2e8619dd13c0817721768af6389a0ac2",
-              "size": 7718971
+              "sha256": "48bc5e8697f56c7c354000d9cce9bd26aff46d4583f70ce382d20b4bb842a003",
+              "size": 7718113
             },
             "install_manifest": {
               "url": "https://github.com/reTsubasa/candy-release/releases/download/runtime-v0.4.0-r100/linux-x86_64.json",
-              "sha256": "a9708477b91cc42d68165328b544758be32e6e86151c3703a4440fda35b29092",
+              "sha256": "09df4f736a0d95778ad60bd069a8d01a614e1d2b19afed0501a29688a82c7bef",
               "size": 363
             }
           },
@@ -12481,12 +12481,12 @@
             "package_format": "tar.gz",
             "runtime": {
               "url": "https://github.com/reTsubasa/candy-release/releases/download/runtime-v0.4.0-r100/candy-server-runtime-aarch64.tar.gz",
-              "sha256": "c2c17fc88803e58a8cdb2dfc78da9e21aa9118a71f3b73fa5f81f9c01cb3c33a",
-              "size": 7222614
+              "sha256": "8bc286d3183cfb8cfafd22ffab73fa1c446cf59bb84abcbd28f108f682efe81c",
+              "size": 7222491
             },
             "install_manifest": {
               "url": "https://github.com/reTsubasa/candy-release/releases/download/runtime-v0.4.0-r100/linux-aarch64.json",
-              "sha256": "f8512b1f0a8cf0585fd3693dfaa32af438e8ac11754543f1452b4adc226a76f8",
+              "sha256": "fc6a979125bfe4a939fdc76d3baa0bdf85ce9ccc86170eebdb29f4284bf8be5b",
               "size": 365
             }
           }
@@ -12494,57 +12494,57 @@
         "release_assets": [
           {
             "name": "BUILD-INFO-ipq40xx-generic-arm_cortex-a7_neon-vfpv4",
-            "sha256": "aabd21082c2633b02ad542e3fafea0a4cd3bbf4fb75f9c1c039d0ef61980fa14",
+            "sha256": "2aabfd0c1fec40e95957ca8b944b068b7b93899543c1b37ba2edafbf5916a04e",
             "size": 383
           },
           {
             "name": "BUILD-INFO-x86_64",
-            "sha256": "f23567492795bdcc18531fa817229a7d2ac959b67bc2e9bd8fdf3816aa35c32e",
+            "sha256": "2264bb2bc273e4cd37c7486661959acecc577f7c7614353e6c348ecd412ca284",
             "size": 351
           },
           {
             "name": "SHA256SUMS",
-            "sha256": "13d9f167e8c791a790abaf704dc1f741016b4c17dc7ac9c4678e4bec1b049199",
+            "sha256": "017207c7a5058547400c96cb274fcaa3ea85197bcda07311a028be116c780afa",
             "size": 1588
           },
           {
             "name": "SHA256SUMS-ipq40xx-generic-arm_cortex-a7_neon-vfpv4",
-            "sha256": "8737c7ac38820d28335e943f7aea04644e1e7dc875505a5a0cede07a4acfac4b",
+            "sha256": "97f0fb73a7fda39ff171f771553717a1c8ed4bece5f6d2df1c8f4a416553b51e",
             "size": 445
           },
           {
             "name": "SHA256SUMS-x86_64",
-            "sha256": "c47eab2727cdb631303ba199cbd2465dc267355687a843999180e9dccecbb771",
+            "sha256": "7444561f598d1a8a68743154dbffe2317e5a9852689d6e0d214ddcea9fd3ad2e",
             "size": 377
           },
           {
             "name": "candy-client-0.4.0-r100-ipq40xx-generic-arm_cortex-a7_neon-vfpv4.apk",
-            "sha256": "b35dfa1e32178905d8ea6f86c1cbeee9b8eb6f07f3f80a6265af964bf1772b12",
-            "size": 5805234
+            "sha256": "3d52dc2b0f082e0b17475f7707e3babc46a2899a14421a1726c46c59bfc2287f",
+            "size": 5805229
           },
           {
             "name": "candy-client-0.4.0-r100-x86_64.apk",
-            "sha256": "f68d3e1cf3fe9e7ea28c1558fcc639f744ac0da9dae3a29196a9d746b499fefe",
-            "size": 6738458
+            "sha256": "ff393e47c81461c2cae77228486823cee5f5323812c99b7738f618724c001340",
+            "size": 6738455
           },
           {
             "name": "candy-server-runtime-aarch64.tar.gz",
-            "sha256": "c2c17fc88803e58a8cdb2dfc78da9e21aa9118a71f3b73fa5f81f9c01cb3c33a",
-            "size": 7222614
+            "sha256": "8bc286d3183cfb8cfafd22ffab73fa1c446cf59bb84abcbd28f108f682efe81c",
+            "size": 7222491
           },
           {
             "name": "candy-server-runtime-x86_64.tar.gz",
-            "sha256": "80c23fb64bb2dd551eb12681aef3aaff2e8619dd13c0817721768af6389a0ac2",
-            "size": 7718971
+            "sha256": "48bc5e8697f56c7c354000d9cce9bd26aff46d4583f70ce382d20b4bb842a003",
+            "size": 7718113
           },
           {
             "name": "linux-aarch64.json",
-            "sha256": "f8512b1f0a8cf0585fd3693dfaa32af438e8ac11754543f1452b4adc226a76f8",
+            "sha256": "fc6a979125bfe4a939fdc76d3baa0bdf85ce9ccc86170eebdb29f4284bf8be5b",
             "size": 365
           },
           {
             "name": "linux-x86_64.json",
-            "sha256": "a9708477b91cc42d68165328b544758be32e6e86151c3703a4440fda35b29092",
+            "sha256": "09df4f736a0d95778ad60bd069a8d01a614e1d2b19afed0501a29688a82c7bef",
             "size": 363
           },
           {
@@ -12559,17 +12559,17 @@
           },
           {
             "name": "runtime-release-metadata-ipq40xx-generic-arm_cortex-a7_neon-vfpv4.json",
-            "sha256": "700ec3ea2996c60be82e95d3cd9124fa6dd8a4c00483278db8a9bf541be2059c",
+            "sha256": "499c9485aaa4805e9729518c44c879e2bde033d9c363c8a5c54c888600ed650f",
             "size": 1159
           },
           {
             "name": "runtime-release-metadata-x86_64.json",
-            "sha256": "0e2cff38c7c26c24d0edb0ee19d2b73b8489a7c8dfacaac4ef73b89253b989c5",
+            "sha256": "8691e1a3e82ee81952fc7d6284086d750b9b017b3ff88a9120b9c55f0bc2cd61",
             "size": 1022
           },
           {
             "name": "runtime-release-metadata.json",
-            "sha256": "c84f4cf466e67c9ee5a8139b4a1cc0753564fcab90152464a992b03ec47d4cfd",
+            "sha256": "becce3b35bfc209edd1bb0bd359fa1db76603095fba01be4eda7e325384ac1d0",
             "size": 3342
           }
         ]
