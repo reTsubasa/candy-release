@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "sequence": 159,
+  "sequence": 160,
   "channel": "stable",
-  "published_at": "2026-09-04T07:38:06Z",
+  "published_at": "2026-09-04T07:42:01Z",
   "runtime": {
     "latest": "v0_4_0_r104",
     "releases": {
@@ -17617,7 +17617,7 @@
       },
       "v0_3_40": {
         "version": "0.3.40",
-        "commit": "fd2ed77fcfb96c1f5a5a707d7e981b1b694795af",
+        "commit": "3d533858ac86c9ce8c04bbbf71c7e3fa930d5bb9",
         "process_api_version": 1,
         "core_api_version": 1,
         "protocol_version": "0.3",
@@ -17628,8 +17628,8 @@
             "libc": "musl",
             "arch": "x86_64",
             "url": "https://github.com/reTsubasa/candy-release/releases/download/core-v0.3.40/candy-core-0.3.40-x86_64-unknown-linux-musl.tar.gz",
-            "sha256": "ef6e4d34e4ed7ab518b85d37778c43c73bebf88f44e1e5fde71ecfe0bded23d8",
-            "size": 8600085
+            "sha256": "834bcc5854eb1321469f77cc526181f3df0b09751843660288db05dd520ec88c",
+            "size": 8602258
           },
           "linux_musl_armv7": {
             "target": "armv7-unknown-linux-musleabihf",
@@ -17637,8 +17637,8 @@
             "libc": "musl",
             "arch": "arm",
             "url": "https://github.com/reTsubasa/candy-release/releases/download/core-v0.3.40/candy-core-0.3.40-armv7-unknown-linux-musleabihf.tar.gz",
-            "sha256": "d3c6cc2236db36d9fa57f801d931f30956d6eb86d010e645253d0776df4a0d6a",
-            "size": 7147132
+            "sha256": "f8e2a8e234d8a02486cb9b5b4a3879483055b8256c28d0b2ccfbe220db18d666",
+            "size": 7147023
           },
           "linux_musl_aarch64": {
             "target": "aarch64-unknown-linux-musl",
@@ -17646,8 +17646,8 @@
             "libc": "musl",
             "arch": "aarch64",
             "url": "https://github.com/reTsubasa/candy-release/releases/download/core-v0.3.40/candy-core-0.3.40-aarch64-unknown-linux-musl.tar.gz",
-            "sha256": "ebbeba08fe28f37d98ab5bc627131ef9b530814c6c8f6ea44592135a7fc0f306",
-            "size": 7775462
+            "sha256": "68c39836c336a098dc7f9754ea66487032b08af451f4ab06f5d0caeed0d605a0",
+            "size": 7778034
           }
         },
         "abi_profiles": {
@@ -17663,8 +17663,8 @@
             "wire_protocol": "0.3",
             "build_request_schema": "candy-core-cloud-build-v1",
             "url": "https://github.com/reTsubasa/candy-release/releases/download/core-v0.3.40/candy-core-0.3.40-cloud-abi-x86_64-unknown-linux-gnu.tar.gz",
-            "sha256": "88e982bdd39d754898cde5c6bf3c376279b75fabc1e3aa36d44ab17cc65a7efe",
-            "size": 489723
+            "sha256": "e0589cf279e2bfbf8bc56412affa1bb4b761091f8dc8ed9da55a20e2df51e489",
+            "size": 489720
           },
           "cloud_control_linux_glibc_aarch64": {
             "artifact_kind": "shared-library",
@@ -17678,94 +17678,94 @@
             "wire_protocol": "0.3",
             "build_request_schema": "candy-core-cloud-build-v1",
             "url": "https://github.com/reTsubasa/candy-release/releases/download/core-v0.3.40/candy-core-0.3.40-cloud-abi-aarch64-unknown-linux-gnu.tar.gz",
-            "sha256": "0be2f8742a9ea55357b1a8aa3d041913375d7c0ce0533d89fe39589996c6bb7c",
-            "size": 464848
+            "sha256": "905a1d77a37799d6059c6e7261e5dfa3ff6d10c2b00d251cd1836baac08cf21c",
+            "size": 464850
           }
         },
         "release_assets": [
           {
             "name": "candy-core-0.3.40-aarch64-unknown-linux-musl.manifest.json",
-            "sha256": "6a00a6592a723ebc5caa03c88055cb858e3803f81230374398b0e5cfe21bdc3e",
+            "sha256": "d89a04ef0e05ea32a2835cf7aba693a60840d9539e7a81892eaf280ce1d40403",
             "size": 4201
           },
           {
             "name": "candy-core-0.3.40-aarch64-unknown-linux-musl.tar.gz",
-            "sha256": "ebbeba08fe28f37d98ab5bc627131ef9b530814c6c8f6ea44592135a7fc0f306",
-            "size": 7775462
+            "sha256": "68c39836c336a098dc7f9754ea66487032b08af451f4ab06f5d0caeed0d605a0",
+            "size": 7778034
           },
           {
             "name": "candy-core-0.3.40-aarch64-unknown-linux-musl.tar.gz.sha256",
-            "sha256": "b95a70724bedeaba0e84cc6688fc5c24459e69300581b47f89852db08811c204",
+            "sha256": "2a32ad048acc7eec819f9726f6076545102649449725aaa1f36d31349ca48e7c",
             "size": 118
           },
           {
             "name": "candy-core-0.3.40-armv7-unknown-linux-musleabihf.manifest.json",
-            "sha256": "8051e30ae3d2a5fa376861f40e6685afdb89d97070f25cdf92bb7775bbd7a5be",
+            "sha256": "c546789e541b05f5a9b0d1615cefe460a4ad284ff54f72a3b0b819a3e71cbbcf",
             "size": 4201
           },
           {
             "name": "candy-core-0.3.40-armv7-unknown-linux-musleabihf.tar.gz",
-            "sha256": "d3c6cc2236db36d9fa57f801d931f30956d6eb86d010e645253d0776df4a0d6a",
-            "size": 7147132
+            "sha256": "f8e2a8e234d8a02486cb9b5b4a3879483055b8256c28d0b2ccfbe220db18d666",
+            "size": 7147023
           },
           {
             "name": "candy-core-0.3.40-armv7-unknown-linux-musleabihf.tar.gz.sha256",
-            "sha256": "d17775eefac61a97072a0c6c14dd2187bd58c1cf958d5aee74b6eeb80c1c35a6",
+            "sha256": "c4b668ce9598bd98323a69694862bab81a0e191005a3e29f3d057c992e43a6a2",
             "size": 122
           },
           {
             "name": "candy-core-0.3.40-cloud-abi-aarch64-unknown-linux-gnu.manifest.json",
-            "sha256": "f58157227d60367d5b155dc32589712397be0e9d12abe18d8d740ee6b3df6fb9",
+            "sha256": "155b22216e0a1558cdd3533300281348d4a1476bcfd92d867296906a2b1bbebe",
             "size": 684
           },
           {
             "name": "candy-core-0.3.40-cloud-abi-aarch64-unknown-linux-gnu.tar.gz",
-            "sha256": "0be2f8742a9ea55357b1a8aa3d041913375d7c0ce0533d89fe39589996c6bb7c",
-            "size": 464848
+            "sha256": "905a1d77a37799d6059c6e7261e5dfa3ff6d10c2b00d251cd1836baac08cf21c",
+            "size": 464850
           },
           {
             "name": "candy-core-0.3.40-cloud-abi-aarch64-unknown-linux-gnu.tar.gz.sha256",
-            "sha256": "c3b8ce1f0a23ded6389cbdb97f377f7ee9abf5214026e1cbf6ec5f3b45e175f5",
+            "sha256": "ecc9ae7f6b6afdd61c5b06656f508a815f066cfb8255c7e2f1e86495c5c1075e",
             "size": 127
           },
           {
             "name": "candy-core-0.3.40-cloud-abi-x86_64-unknown-linux-gnu.manifest.json",
-            "sha256": "77fc8fdd1e91f48a4c9dd80dceffbea871afec6e2aa3b6507b20d4a50d09076a",
+            "sha256": "07023aed6215fd4cd63a3b9a8df2690ac927c9696fea4871f33a2512ba0e7e75",
             "size": 682
           },
           {
             "name": "candy-core-0.3.40-cloud-abi-x86_64-unknown-linux-gnu.tar.gz",
-            "sha256": "88e982bdd39d754898cde5c6bf3c376279b75fabc1e3aa36d44ab17cc65a7efe",
-            "size": 489723
+            "sha256": "e0589cf279e2bfbf8bc56412affa1bb4b761091f8dc8ed9da55a20e2df51e489",
+            "size": 489720
           },
           {
             "name": "candy-core-0.3.40-cloud-abi-x86_64-unknown-linux-gnu.tar.gz.sha256",
-            "sha256": "066b7d6966b5ed373a7fcec0677001f40f05141e308d9ca82f189ea37eee25ed",
+            "sha256": "96a2bf5a0f0f85629577d9054fd1ee0e0e2aad1812a94cfa16b9f86f5f5095cb",
             "size": 126
           },
           {
             "name": "candy-core-0.3.40-x86_64-unknown-linux-musl.manifest.json",
-            "sha256": "11e21ddbbbb025cdb087342b8781cc6da8214f8038d349e970ea36d775944c07",
+            "sha256": "6bb7b3c169ebf4663de92c19c3342236e555a1152a33de03a4ba91ec27d3f0d8",
             "size": 4198
           },
           {
             "name": "candy-core-0.3.40-x86_64-unknown-linux-musl.tar.gz",
-            "sha256": "ef6e4d34e4ed7ab518b85d37778c43c73bebf88f44e1e5fde71ecfe0bded23d8",
-            "size": 8600085
+            "sha256": "834bcc5854eb1321469f77cc526181f3df0b09751843660288db05dd520ec88c",
+            "size": 8602258
           },
           {
             "name": "candy-core-0.3.40-x86_64-unknown-linux-musl.tar.gz.sha256",
-            "sha256": "59006c6b0a094810c6fe71db1389a8b2836e5c8e8d33f0805c84c39512e13048",
+            "sha256": "f4671788973b7aee194b249b0b9d1d0c8f9ddf17d99235b6b4b9604122117f14",
             "size": 117
           },
           {
             "name": "core-cloud-abi-release-metadata.json",
-            "sha256": "b4dfcf9f0e2ce2692faa99dac7d4d9935554ce3c68867ae5a4d6ea3dd57ca33c",
+            "sha256": "ed0cfbb73aad1d3c74108ee642a5708a576bcd540012621d1f0dd1f599419e0b",
             "size": 2293
           },
           {
             "name": "core-release-metadata.json",
-            "sha256": "4db216372c9941920f1268e5217320793237ddc52b4e1a84ac52f17818526ab7",
+            "sha256": "a50d145dcdb15c6a4d9f6e1d420bbed7f93f72b5c83068fa5bc0ea86c75b102c",
             "size": 2998
           }
         ]
