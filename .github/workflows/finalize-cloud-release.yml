@@ -19,6 +19,7 @@ concurrency:
 
 jobs:
   finalize:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.client_payload.release_kind == 'cloud' }}
     runs-on: ubuntu-24.04
     env:
       STAGING_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.staging_tag || github.event.client_payload.staging_tag }}
