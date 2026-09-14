@@ -2,7 +2,7 @@ name: finalize-cloud-release
 
 on:
   repository_dispatch:
-    types: [candy-cloud-artifact-ready]
+    types: [candy-cloud-artifact-ready, candy-artifact-ready]
   workflow_dispatch:
     inputs:
       staging_tag:
@@ -36,21 +36,24 @@ jobs:
           set -euo pipefail
           fail() { echo "finalize-cloud-release: $*" >&2; exit 1; }
           case "$STAGING_TAG" in
-            incoming-cloud-x86-[0-9a-f]*) architecture=x86_64; prefix=cloud-x86 ;;
-            incoming-cloud-arm64-[0-9a-f]*) architecture=arm64; prefix=cloud-arm64 ;;
+            incoming-cloud-x86-[0-9a-f]*) architecture=x86_64; artifact_arch=x86 ;;
+            incoming-cloud-arm64-[0-9a-f]*) architecture=arm64; artifact_arch=arm64 ;;
             *) fail "invalid Cloud staging tag" ;;
           esac
           printf '%s' "$STAGING_TAG" | grep -Eq '^incoming-cloud-(x86|arm64)-[0-9a-f]{12}$' || fail "invalid Cloud staging tag"
           revision=${STAGING_TAG##*-}
           release_tag="${STAGING_TAG#incoming-}"
-          metadata="candy-cloud-${architecture}-${revision}.json"
-          archive="candy-cloud-${architecture}-${revision}.tar.gz"
+          metadata="candy-cloud-${artifact_arch}-${revision}.json"
+          archive="candy-cloud-${artifact_arch}-${revision}.tar.gz"
           checksum="${archive}.sha256"
           mkdir -m 0700 incoming
           release_json=$(gh release view "$STAGING_TAG" --json tagName,isDraft)
           test "$(jq -r .tagName <<<"$release_json")" = "$STAGING_TAG" || fail "staging tag mismatch"
           test "$(jq -r .isDraft <<<"$release_json")" = true || fail "staging Release must be a draft"
           gh release download "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --dir incoming
+          expected_names=$(printf '%s\n' "$metadata" "$archive" "$checksum" | sort)
+          actual_names=$(find incoming -maxdepth 1 -type f -printf '%f\n' | sort)
+          test "$actual_names" = "$expected_names" || fail "unexpected Cloud staging asset set"
           for file in "$metadata" "$archive" "$checksum"; do
             test -f "incoming/$file" && test ! -L "incoming/$file" && test -s "incoming/$file" || fail "missing Cloud asset: $file"
           done
@@ -58,25 +61,52 @@ jobs:
           (cd incoming && sha256sum -c "$checksum") || fail "Cloud archive checksum mismatch"
           jq -e --arg repository "reTsubasa/candy-cloud" --arg architecture "$architecture" --arg revision "$revision" '
             .schema_version == 1 and .source.repository == $repository and
-            (.source.commit | test("^[0-9a-f]{40,64}$")) and
-            .architecture == $architecture and .revision == $revision and
-            (.images | type == "array" and length == 6 and all(.[]; type == "string"))
+            (.source.commit | test("^[0-9a-fA-F]{40,64}$")) and
+            (.source.commit | startswith($revision)) and
+            .architecture == $architecture and
+            .images == ["migrate","cloud-api","cloud-identity","cloud-auth","cloud-worker","cloud-web"] and
+            (.core.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) and
+            (.core.bundle_sha256 | test("^[0-9a-fA-F]{64}$")) and
+            (.core.module_sha256 | test("^[0-9a-fA-F]{64}$")) and
+            (.runtime.release_tag | test("^runtime-v[0-9]+\\.[0-9]+\\.[0-9]+-r[1-9][0-9]*$"))
           ' "incoming/$metadata" >/dev/null || fail "Cloud metadata contract mismatch"
-          test "$(tar -tzf "incoming/$archive" | grep -c '/\|^[^/][^/]*$')" -gt 0 || fail "Cloud image archive is empty"
+          expected_tags=$(printf '%s\n' \
+            "candy-cloud-migrate:$artifact_arch-$revision" \
+            "candy-cloud-cloud-api:$artifact_arch-$revision" \
+            "candy-cloud-cloud-identity:$artifact_arch-$revision" \
+            "candy-cloud-cloud-auth:$artifact_arch-$revision" \
+            "candy-cloud-cloud-worker:$artifact_arch-$revision" \
+            "candy-cloud-cloud-web:$artifact_arch-$revision" | sort)
+          tar -xOzf "incoming/$archive" manifest.json > docker-manifest.json || fail "Cloud archive has no Docker manifest"
+          actual_tags=$(jq -r '.[].RepoTags[]' docker-manifest.json | sort)
+          test "$actual_tags" = "$expected_tags" || fail "Cloud archive image tags do not match metadata"
 
-          if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            formal_dir=$(mktemp -d)
-            gh release download "$release_tag" --repo "$GITHUB_REPOSITORY" --dir "$formal_dir"
-            for file in "$metadata" "$archive" "$checksum"; do
-              cmp "incoming/$file" "$formal_dir/$file" || fail "existing Cloud Release differs: $file"
-            done
-            gh release delete "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --yes || true
-            exit 0
+          if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,assets > formal.json 2>/dev/null; then
+            if test "$(jq -r .isDraft formal.json)" = true; then
+              gh release delete "$release_tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+            else
+              test "$(jq -r .isPrerelease formal.json)" = true || fail "existing Cloud Release is not a prerelease"
+              formal_names=$(jq -r '.assets[].name' formal.json | sort)
+              test "$formal_names" = "$expected_names" || fail "existing Cloud Release asset set differs"
+              formal_dir=$(mktemp -d)
+              gh release download "$release_tag" --repo "$GITHUB_REPOSITORY" --dir "$formal_dir"
+              for file in "$metadata" "$archive" "$checksum"; do
+                cmp "incoming/$file" "$formal_dir/$file" || fail "existing Cloud Release differs: $file"
+              done
+              gh release delete "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --yes || true
+              exit 0
+            fi
           fi
 
-          gh release create "$release_tag" --repo "$GITHUB_REPOSITORY" --target main \
+          gh release create "$release_tag" --repo "$GITHUB_REPOSITORY" --target main --draft --prerelease \
             --title "Candy Cloud ${architecture} ${revision}" \
             --notes "Validated Cloud deployment images from reTsubasa/candy-cloud commit $(jq -r .source.commit "incoming/$metadata")."
           gh release upload "$release_tag" --repo "$GITHUB_REPOSITORY" \
             "incoming/$archive" "incoming/$checksum" "incoming/$metadata"
+          published_dir=$(mktemp -d)
+          gh release download "$release_tag" --repo "$GITHUB_REPOSITORY" --dir "$published_dir"
+          for file in "$metadata" "$archive" "$checksum"; do
+            cmp "incoming/$file" "$published_dir/$file" || fail "published Cloud Release differs: $file"
+          done
+          gh release edit "$release_tag" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease
           gh release delete "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --yes
