@@ -1,0 +1,82 @@
+name: finalize-cloud-release
+
+on:
+  repository_dispatch:
+    types: [candy-cloud-artifact-ready]
+  workflow_dispatch:
+    inputs:
+      staging_tag:
+        description: Existing incoming Cloud draft Release tag
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: candy-cloud-release
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    env:
+      STAGING_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.staging_tag || github.event.client_payload.staging_tag }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Validate and publish Cloud staging assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          fail() { echo "finalize-cloud-release: $*" >&2; exit 1; }
+          case "$STAGING_TAG" in
+            incoming-cloud-x86-[0-9a-f]*) architecture=x86_64; prefix=cloud-x86 ;;
+            incoming-cloud-arm64-[0-9a-f]*) architecture=arm64; prefix=cloud-arm64 ;;
+            *) fail "invalid Cloud staging tag" ;;
+          esac
+          printf '%s' "$STAGING_TAG" | grep -Eq '^incoming-cloud-(x86|arm64)-[0-9a-f]{12}$' || fail "invalid Cloud staging tag"
+          revision=${STAGING_TAG##*-}
+          release_tag="${STAGING_TAG#incoming-}"
+          metadata="candy-cloud-${architecture}-${revision}.json"
+          archive="candy-cloud-${architecture}-${revision}.tar.gz"
+          checksum="${archive}.sha256"
+          mkdir -m 0700 incoming
+          release_json=$(gh release view "$STAGING_TAG" --json tagName,isDraft)
+          test "$(jq -r .tagName <<<"$release_json")" = "$STAGING_TAG" || fail "staging tag mismatch"
+          test "$(jq -r .isDraft <<<"$release_json")" = true || fail "staging Release must be a draft"
+          gh release download "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --dir incoming
+          for file in "$metadata" "$archive" "$checksum"; do
+            test -f "incoming/$file" && test ! -L "incoming/$file" && test -s "incoming/$file" || fail "missing Cloud asset: $file"
+          done
+          awk -v name="$archive" 'NF == 2 && $2 == name && $1 ~ /^[0-9a-f]{64}$/ { found=1 } END { exit found ? 0 : 1 }' "incoming/$checksum" || fail "invalid Cloud checksum"
+          (cd incoming && sha256sum -c "$checksum") || fail "Cloud archive checksum mismatch"
+          jq -e --arg repository "reTsubasa/candy-cloud" --arg architecture "$architecture" --arg revision "$revision" '
+            .schema_version == 1 and .source.repository == $repository and
+            (.source.commit | test("^[0-9a-f]{40,64}$")) and
+            .architecture == $architecture and .revision == $revision and
+            (.images | type == "array" and length == 6 and all(.[]; type == "string"))
+          ' "incoming/$metadata" >/dev/null || fail "Cloud metadata contract mismatch"
+          test "$(tar -tzf "incoming/$archive" | grep -c '/\|^[^/][^/]*$')" -gt 0 || fail "Cloud image archive is empty"
+
+          if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            formal_dir=$(mktemp -d)
+            gh release download "$release_tag" --repo "$GITHUB_REPOSITORY" --dir "$formal_dir"
+            for file in "$metadata" "$archive" "$checksum"; do
+              cmp "incoming/$file" "$formal_dir/$file" || fail "existing Cloud Release differs: $file"
+            done
+            gh release delete "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --yes || true
+            exit 0
+          fi
+
+          gh release create "$release_tag" --repo "$GITHUB_REPOSITORY" --target main \
+            --title "Candy Cloud ${architecture} ${revision}" \
+            --notes "Validated Cloud deployment images from reTsubasa/candy-cloud commit $(jq -r .source.commit "incoming/$metadata")."
+          gh release upload "$release_tag" --repo "$GITHUB_REPOSITORY" \
+            "incoming/$archive" "incoming/$checksum" "incoming/$metadata"
+          gh release delete "$STAGING_TAG" --repo "$GITHUB_REPOSITORY" --yes
