@@ -29,8 +29,8 @@ https://raw.githubusercontent.com/reTsubasa/candy-release/main/channels/stable.j
 
 - Runtime: `0.4.0-r119`
 - Core: `0.3.47`
-- Catalog sequence: `223`
-- Published at: `2026-09-15T08:15:33Z`
+- Catalog sequence: `224`
+- Published at: `2026-09-15T09:51:05Z`
 <!-- stable-status:end -->
 
 ## Release tags and asset names
