@@ -808,3 +808,12 @@ jobs:
           fi
           trap - ERR INT TERM
           gh release delete "$STAGING_TAG" --yes || true
+          if test "$RELEASE_KIND" = core; then
+            source_commit=$(jq -er '.source.commit' incoming/core-release-metadata.json)
+            candidate_tag="candidate-core-v$RELEASE_VERSION-${source_commit:0:12}"
+            candidate_json=$(gh release view "$candidate_tag" --json isDraft 2>/dev/null || true)
+            if test -n "$candidate_json"; then
+              test "$(jq -r .isDraft <<<"$candidate_json")" = true || fail "unsigned candidate is unexpectedly public"
+              gh release delete "$candidate_tag" --yes
+            fi
+          fi

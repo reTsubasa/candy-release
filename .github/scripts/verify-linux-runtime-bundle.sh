@@ -44,6 +44,7 @@ for executable in \
 	usr/local/libexec/serverd-linux \
 	usr/local/libexec/candy-sdwan-runtime \
 	usr/local/libexec/candy-sdwan-agent \
+	usr/local/libexec/candy-tunio \
 	usr/local/libexec/candy-netd \
 	usr/local/libexec/candy-cloud-enroll \
 	usr/local/libexec/candy-cloud-sync \
@@ -74,7 +75,7 @@ if find "$extract_root" -type f \( -name candy-core -o -name 'libcandy_core*' \)
 	fail "bundle contains a forbidden Core artifact: $bundle"
 fi
 
-for elf in candy-netd candy-sdwan-agent candy-cloud-enroll candy-cloud-sync; do
+for elf in candy-netd candy-sdwan-agent candy-tunio candy-cloud-enroll candy-cloud-sync; do
 	machine=$(readelf -h "$extract_root/usr/local/libexec/$elf" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')
 	case "$machine" in
 		*"$expected_machine"*) ;;

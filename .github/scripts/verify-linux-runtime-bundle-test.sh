@@ -24,7 +24,7 @@ EOF
 for executable in candy-core-manager; do
 	printf '#!/bin/sh\nexit 0\n' >"$stage/usr/local/bin/$executable"
 done
-for executable in serverd-linux candy-sdwan-runtime candy-sdwan-agent candy-netd candy-cloud-enroll candy-cloud-sync candy-server-health-check; do
+for executable in serverd-linux candy-sdwan-runtime candy-sdwan-agent candy-tunio candy-netd candy-cloud-enroll candy-cloud-sync candy-server-health-check; do
 	printf '#!/bin/sh\nexit 0\n' >"$stage/usr/local/libexec/$executable"
 done
 for executable in install-candy-server.sh upgrade-candy-server.sh; do
@@ -71,6 +71,13 @@ printf '%s\n' '[Service]' >"$tmp/duplicate/systemd/candy-sdwan.service"
 tar --no-xattrs -C "$tmp/duplicate" -czf "$tmp/duplicate.tar.gz" .
 if PATH="$tmp/bin:$PATH" "$verifier" 0.4.0 x86_64 "$tmp/duplicate.tar.gz" >/dev/null 2>&1; then
 	fail "duplicate server SD-WAN service was accepted"
+fi
+
+cp -R "$stage" "$tmp/no-tunio"
+rm "$tmp/no-tunio/usr/local/libexec/candy-tunio"
+tar --no-xattrs -C "$tmp/no-tunio" -czf "$tmp/no-tunio.tar.gz" .
+if PATH="$tmp/bin:$PATH" "$verifier" 0.4.0 x86_64 "$tmp/no-tunio.tar.gz" >/dev/null 2>&1; then
+	fail "bundle without the infrastructure TUN process was accepted"
 fi
 
 cp -R "$stage" "$tmp/no-fail-open"
